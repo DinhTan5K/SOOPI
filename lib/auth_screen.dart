@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'home.dart'; // Import để điều hướng sang HomeScreen
-import 'services/auth_service.dart'; // Import AuthService
+import 'home.dart';
+import 'services/auth_service.dart';
+import 'merchant/merchant_login_screen.dart';
+import 'main.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -46,14 +48,11 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       if (_isLogin) {
-        // Sử dụng AuthService để đăng nhập
         await _authService.signInWithEmailPassword(email, password);
       } else {
-        // Sử dụng AuthService để đăng ký
         await _authService.signUpWithEmailPassword(email, password);
       }
-      
-      // Thành công, chuyển sang HomeScreen
+
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -98,6 +97,14 @@ class _AuthScreenState extends State<AuthScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 40),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const MerchantLoginScreen(),
+                )),
+                icon: const Icon(Icons.storefront_outlined),
+                label: const Text('Dành cho chủ quán'),
+              ),
+              const SizedBox(height: 16),
               Center(
                 child: Container(
                   width: 100,
@@ -207,8 +214,10 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 24),
               
               // Đăng nhập qua mạng xã hội
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 16,
+                runSpacing: 12,
                 children: [
                   _buildSocialButton('Google', Colors.red),
                   const SizedBox(width: 16),
@@ -219,8 +228,10 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 40),
               
               // Chuyển đổi giữa Đăng nhập / Đăng ký
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 8,
                 children: [
                   Text(
                     _isLogin ? 'Chưa có tài khoản? ' : 'Đã có tài khoản? ',

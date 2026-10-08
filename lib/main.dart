@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-import 'auth_screen.dart'; // Thêm import màn hình Auth
+import 'auth_screen.dart'; 
 
 void main() async {
+  // Bắt buộc phải có khi khởi tạo Firebase
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Khởi tạo Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
   runApp(const MyApp());
 }
 
@@ -24,6 +28,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: Colors.white,
       ),
+      // Mặc định mở app lên sẽ vào thẳng màn hình Đăng nhập
       home: const AuthScreen(),
     );
   }
