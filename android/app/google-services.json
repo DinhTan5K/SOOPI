@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "100961861308",
+    "project_id": "soopi-food",
+    "storage_bucket": "soopi-food.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:100961861308:android:a648d50f73cd74349d1ab9",
+        "android_client_info": {
+          "package_name": "com.example.soopi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDofABLUk46uMOawNp14sDT0zC5qOUlqK0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

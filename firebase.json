@@ -1,0 +1,1 @@
+{"flutter":{"platforms":{"android":{"default":{"projectId":"soopi-food","appId":"1:100961861308:android:a648d50f73cd74349d1ab9","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"soopi-food","configurations":{"android":"1:100961861308:android:a648d50f73cd74349d1ab9","web":"1:100961861308:web:fb2badadba9278439d1ab9"}}}}}}

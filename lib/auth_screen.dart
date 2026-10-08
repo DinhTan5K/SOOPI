@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'main.dart'; // Import để điều hướng sang MainScreen
+import 'package:firebase_auth/firebase_auth.dart';
+import 'home.dart'; // Import để điều hướng sang HomeScreen
+import 'services/auth_service.dart'; // Import AuthService
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -10,6 +12,81 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = true;
+  bool _isLoading = false;
+
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  
+  // Khởi tạo AuthService
+  final AuthService _authService = AuthService();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitAuth() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập đầy đủ thông tin')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      if (_isLogin) {
+        // Sử dụng AuthService để đăng nhập
+        await _authService.signInWithEmailPassword(email, password);
+      } else {
+        // Sử dụng AuthService để đăng ký
+        await _authService.signUpWithEmailPassword(email, password);
+      }
+      
+      // Thành công, chuyển sang HomeScreen
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = 'Đã có lỗi xảy ra. Vui lòng thử lại sau.';
+      if (e.code == 'user-not-found') {
+        message = 'Không tìm thấy người dùng với email này.';
+      } else if (e.code == 'wrong-password') {
+        message = 'Sai mật khẩu.';
+      } else if (e.code == 'email-already-in-use') {
+        message = 'Email này đã được sử dụng.';
+      } else if (e.code == 'weak-password') {
+        message = 'Mật khẩu quá yếu.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Email không hợp lệ.';
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +102,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Container(
                   width: 100,
                   height: 100,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -60,18 +137,22 @@ class _AuthScreenState extends State<AuthScreen> {
                 _buildTextField(
                   hintText: 'Họ và tên',
                   icon: Icons.person_outline,
+                  controller: _nameController,
                 ),
               if (!_isLogin) const SizedBox(height: 16),
               
               _buildTextField(
-                hintText: 'Email hoặc Số điện thoại',
+                hintText: 'Email',
                 icon: Icons.email_outlined,
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 16),
               _buildTextField(
                 hintText: 'Mật khẩu',
                 icon: Icons.lock_outline,
                 isPassword: true,
+                controller: _passwordController,
               ),
               
               if (_isLogin)
@@ -87,13 +168,7 @@ class _AuthScreenState extends State<AuthScreen> {
               
               // Nút Đăng nhập / Đăng ký
               ElevatedButton(
-                onPressed: () {
-                  // Chuyển hướng sang màn hình Home khi đăng nhập thành công
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const MainScreen()),
-                  );
-                },
+                onPressed: _isLoading ? null : _submitAuth,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,
@@ -103,10 +178,16 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                   elevation: 0,
                 ),
-                child: Text(
-                  _isLogin ? 'ĐĂNG NHẬP' : 'ĐĂNG KÝ',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                child: _isLoading 
+                  ? const SizedBox(
+                      height: 20, 
+                      width: 20, 
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                    )
+                  : Text(
+                      _isLogin ? 'ĐĂNG NHẬP' : 'ĐĂNG KÝ',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
               ),
               
               const SizedBox(height: 24),
@@ -165,7 +246,13 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildTextField({required String hintText, required IconData icon, bool isPassword = false}) {
+  Widget _buildTextField({
+    required String hintText, 
+    required IconData icon, 
+    bool isPassword = false, 
+    TextEditingController? controller,
+    TextInputType? keyboardType,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
@@ -173,7 +260,9 @@ class _AuthScreenState extends State<AuthScreen> {
         border: Border.all(color: Colors.grey.shade200),
       ),
       child: TextField(
+        controller: controller,
         obscureText: isPassword,
+        keyboardType: keyboardType,
         decoration: InputDecoration(
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
