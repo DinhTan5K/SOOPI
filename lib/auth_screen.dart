@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'merchant/merchant_login_screen.dart';
 import 'main.dart'; // Import để điều hướng sang MainScreen
 
 class AuthScreen extends StatefulWidget {
@@ -21,6 +22,14 @@ class _AuthScreenState extends State<AuthScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 40),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const MerchantLoginScreen(),
+                )),
+                icon: const Icon(Icons.storefront_outlined),
+                label: const Text('Dành cho chủ quán'),
+              ),
+              const SizedBox(height: 16),
               Center(
                 child: Container(
                   width: 100,
@@ -126,11 +135,12 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 24),
               
               // Đăng nhập qua mạng xã hội
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 16,
+                runSpacing: 12,
                 children: [
                   _buildSocialButton('Google', Colors.red),
-                  const SizedBox(width: 16),
                   _buildSocialButton('Facebook', Colors.blue, icon: Icons.facebook),
                 ],
               ),
@@ -138,8 +148,10 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 40),
               
               // Chuyển đổi giữa Đăng nhập / Đăng ký
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 8,
                 children: [
                   Text(
                     _isLogin ? 'Chưa có tài khoản? ' : 'Đã có tài khoản? ',
