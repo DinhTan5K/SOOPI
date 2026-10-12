@@ -4,7 +4,7 @@ namespace SoopiFoodBE.DataAccess.Dao;
 
 public interface IEntityDao<T> where T : class, IEntity
 {
-    Task<T?> GetAsync(int id, CancellationToken ct = default);
+    Task<T?> GetAsync(Guid id, CancellationToken ct = default);
     Task<List<T>> ListAsync(CancellationToken ct = default);
     Task<T> AddAsync(T entity, CancellationToken ct = default);
     Task DeleteAsync(T entity, CancellationToken ct = default);

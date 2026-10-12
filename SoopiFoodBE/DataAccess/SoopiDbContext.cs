@@ -34,22 +34,93 @@ public sealed class SoopiDbContext(
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<UserAddress>().ToTable("UserAddresses");
+        modelBuilder.Entity<AppUser>().ToTable("users");
+        modelBuilder.Entity<UserAddress>().ToTable("user_addresses");
+        modelBuilder.Entity<AppUser>().Property(user => user.Id).HasColumnName("id");
+        modelBuilder.Entity<AppUser>().Property(user => user.FirebaseUid)
+            .HasColumnName("firebase_uid");
+        modelBuilder.Entity<AppUser>().Property(user => user.FullName)
+            .HasColumnName("full_name");
+        modelBuilder.Entity<AppUser>().Property(user => user.Email).HasColumnName("email");
+        modelBuilder.Entity<AppUser>().Property(user => user.Phone)
+            .HasColumnName("phone_number");
+        modelBuilder.Entity<AppUser>().Property(user => user.AvatarUrl)
+            .HasColumnName("avatar_url");
+        modelBuilder.Entity<AppUser>().Property(user => user.DateOfBirth)
+            .HasColumnName("date_of_birth");
+        modelBuilder.Entity<AppUser>().Property(user => user.CreatedAt)
+            .HasColumnName("created_at");
+        modelBuilder.Entity<AppUser>().Property(user => user.UpdatedAt)
+            .HasColumnName("updated_at");
+        modelBuilder.Entity<AppUser>().Property(user => user.IsLocked)
+            .HasColumnName("is_locked");
+
+        modelBuilder.Entity<UserAddress>().Property(address => address.Id)
+            .HasColumnName("id");
+        modelBuilder.Entity<UserAddress>().Property(address => address.FirebaseUid)
+            .HasColumnName("firebase_uid");
+        modelBuilder.Entity<UserAddress>().Property(address => address.UserId)
+            .HasColumnName("user_id");
+        modelBuilder.Entity<UserAddress>().Property(address => address.Label)
+            .HasColumnName("label");
+        modelBuilder.Entity<UserAddress>().Property(address => address.RecipientName)
+            .HasColumnName("recipient_name");
+        modelBuilder.Entity<UserAddress>().Property(address => address.Phone)
+            .HasColumnName("phone_number");
+        modelBuilder.Entity<UserAddress>().Property(address => address.FullAddress)
+            .HasColumnName("full_address");
+        modelBuilder.Entity<UserAddress>().Property(address => address.Note)
+            .HasColumnName("note");
+        modelBuilder.Entity<UserAddress>().Property(address => address.IsDefault)
+            .HasColumnName("is_default");
+        modelBuilder.Entity<UserAddress>().Property(address => address.CreatedAt)
+            .HasColumnName("created_at");
+        modelBuilder.Entity<UserAddress>().Property(address => address.UpdatedAt)
+            .HasColumnName("updated_at");
 
         modelBuilder.Entity<AppUser>()
-            .HasIndex(user => user.Email)
-            .IsUnique();
+            .HasIndex(user => user.Email);
         modelBuilder.Entity<AppUser>()
             .HasIndex(user => user.FirebaseUid)
-            .IsUnique()
-            .HasFilter("[FirebaseUid] IS NOT NULL");
-        modelBuilder.Entity<AppUser>().Property(user => user.Email).HasMaxLength(255);
-        modelBuilder.Entity<AppUser>().Property(user => user.Role).HasMaxLength(20);
+            .IsUnique();
+        modelBuilder.Entity<AppUser>().Property(user => user.FirebaseUid).HasMaxLength(128);
+        modelBuilder.Entity<AppUser>().Property(user => user.FirebaseUid)
+            .HasColumnType("varchar(128)");
+        modelBuilder.Entity<AppUser>().Property(user => user.FullName)
+            .HasColumnType("varchar(150)");
+        modelBuilder.Entity<AppUser>().Property(user => user.Email)
+            .HasColumnType("varchar(150)");
+        modelBuilder.Entity<AppUser>().Property(user => user.Role)
+            .HasColumnName("role")
+            .HasColumnType("varchar(20)");
+        modelBuilder.Entity<AppUser>().Property(user => user.Phone)
+            .HasColumnType("varchar(20)")
+            .HasMaxLength(20);
+        modelBuilder.Entity<AppUser>().Property(user => user.AvatarUrl)
+            .HasColumnType("varchar(500)");
+        modelBuilder.Entity<AppUser>().Property(user => user.Gender)
+            .HasColumnName("gender")
+            .HasColumnType("varchar(20)");
 
-        modelBuilder.Entity<UserAddress>().Property(address => address.Latitude)
-            .HasPrecision(10, 7);
-        modelBuilder.Entity<UserAddress>().Property(address => address.Longitude)
-            .HasPrecision(10, 7);
+        modelBuilder.Entity<UserAddress>().Property(address => address.FirebaseUid)
+            .HasColumnType("varchar(128)");
+        modelBuilder.Entity<UserAddress>().Property(address => address.Label)
+            .HasColumnType("varchar(50)");
+        modelBuilder.Entity<UserAddress>().Property(address => address.RecipientName)
+            .HasColumnType("varchar(100)");
+        modelBuilder.Entity<UserAddress>().Property(address => address.Phone)
+            .HasColumnType("varchar(20)")
+            .HasMaxLength(20);
+        modelBuilder.Entity<UserAddress>().Property(address => address.FullAddress)
+            .HasColumnType("varchar(500)");
+        modelBuilder.Entity<UserAddress>().Property(address => address.Note)
+            .HasColumnType("varchar(255)");
+        modelBuilder.Entity<UserAddress>()
+            .HasOne(address => address.User)
+            .WithMany(user => user.Addresses)
+            .HasForeignKey(address => address.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
     }
 
     private static void ConfigureRestaurants(ModelBuilder modelBuilder)

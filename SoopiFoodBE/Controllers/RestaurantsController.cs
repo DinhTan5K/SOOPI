@@ -21,21 +21,21 @@ public sealed class RestaurantsController(
         CancellationToken ct) =>
         Ok(await service.Search(q, category, minRating, lat, lng, radiusKm, ct));
 
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> Get(int id, CancellationToken ct)
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> Get(Guid id, CancellationToken ct)
     {
         var restaurant = await service.Get(id, ct);
         return restaurant is null ? NotFound() : Ok(restaurant);
     }
 
-    [HttpGet("{id:int}/menu")]
-    public async Task<IActionResult> Menu(int id, CancellationToken ct) =>
+    [HttpGet("{id:guid}/menu")]
+    public async Task<IActionResult> Menu(Guid id, CancellationToken ct) =>
         Ok(await service.Menu(id, ct));
 
-    [HttpPut("{id:int}/owner/{ownerId:int}")]
+    [HttpPut("{id:guid}/owner/{ownerId:guid}")]
     public async Task<IActionResult> Update(
-        int id,
-        int ownerId,
+        Guid id,
+        Guid ownerId,
         RestaurantUpdate input,
         CancellationToken ct)
     {
@@ -44,10 +44,10 @@ public sealed class RestaurantsController(
             : NotFound();
     }
 
-    [HttpPut("{id:int}/owner/{ownerId:int}/hours/{day:int}")]
+    [HttpPut("{id:guid}/owner/{ownerId:guid}/hours/{day:int}")]
     public async Task<IActionResult> Hours(
-        int id,
-        int ownerId,
+        Guid id,
+        Guid ownerId,
         byte day,
         OpeningHourRequest input,
         CancellationToken ct)
@@ -64,9 +64,9 @@ public sealed class RestaurantsController(
         }
     }
 
-    [HttpPost("owner/{ownerId:int}/menu")]
+    [HttpPost("owner/{ownerId:guid}/menu")]
     public async Task<IActionResult> AddMenu(
-        int ownerId,
+        Guid ownerId,
         MenuItemRequest input,
         CancellationToken ct)
     {
@@ -80,10 +80,10 @@ public sealed class RestaurantsController(
         }
     }
 
-    [HttpPut("owner/{ownerId:int}/menu/{itemId:int}")]
+    [HttpPut("owner/{ownerId:guid}/menu/{itemId:guid}")]
     public async Task<IActionResult> UpdateMenu(
-        int ownerId,
-        int itemId,
+        Guid ownerId,
+        Guid itemId,
         MenuItemRequest input,
         CancellationToken ct)
     {
@@ -97,10 +97,10 @@ public sealed class RestaurantsController(
         }
     }
 
-    [HttpDelete("owner/{ownerId:int}/menu/{itemId:int}")]
+    [HttpDelete("owner/{ownerId:guid}/menu/{itemId:guid}")]
     public async Task<IActionResult> DeleteMenu(
-        int ownerId,
-        int itemId,
+        Guid ownerId,
+        Guid itemId,
         CancellationToken ct)
     {
         return await service.DeleteMenu(ownerId, itemId, ct)
@@ -108,14 +108,14 @@ public sealed class RestaurantsController(
             : NotFound();
     }
 
-    [HttpGet("favorites/{userId:int}")]
-    public async Task<IActionResult> Favorites(int userId, CancellationToken ct) =>
+    [HttpGet("favorites/{userId:guid}")]
+    public async Task<IActionResult> Favorites(Guid userId, CancellationToken ct) =>
         Ok(await reviews.Favorites(userId, ct));
 
-    [HttpPut("favorites/{userId:int}/{restaurantId:int}")]
+    [HttpPut("favorites/{userId:guid}/{restaurantId:guid}")]
     public async Task<IActionResult> Favorite(
-        int userId,
-        int restaurantId,
+        Guid userId,
+        Guid restaurantId,
         [FromQuery] bool saved,
         CancellationToken ct)
     {

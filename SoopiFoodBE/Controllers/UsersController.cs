@@ -8,16 +8,16 @@ namespace SoopiFoodBE.Controllers;
 [Route("api/users")]
 public sealed class UsersController(IUserService service) : ControllerBase
 {
-    [HttpGet("{userId:int}")]
-    public async Task<IActionResult> Profile(int userId, CancellationToken ct)
+    [HttpGet("{userId:guid}")]
+    public async Task<IActionResult> Profile(Guid userId, CancellationToken ct)
     {
         var user = await service.Profile(userId, ct);
         return user is null ? NotFound() : Ok(user);
     }
 
-    [HttpPut("{userId:int}/profile")]
+    [HttpPut("{userId:guid}/profile")]
     public async Task<IActionResult> Update(
-        int userId,
+        Guid userId,
         ProfileUpdate input,
         CancellationToken ct)
     {
@@ -26,13 +26,13 @@ public sealed class UsersController(IUserService service) : ControllerBase
             : NotFound();
     }
 
-    [HttpGet("{userId:int}/addresses")]
-    public async Task<IActionResult> Addresses(int userId, CancellationToken ct) =>
+    [HttpGet("{userId:guid}/addresses")]
+    public async Task<IActionResult> Addresses(Guid userId, CancellationToken ct) =>
         Ok(await service.Addresses(userId, ct));
 
-    [HttpPost("{userId:int}/addresses")]
+    [HttpPost("{userId:guid}/addresses")]
     public async Task<IActionResult> AddAddress(
-        int userId,
+        Guid userId,
         AddressRequest input,
         CancellationToken ct)
     {
@@ -40,10 +40,10 @@ public sealed class UsersController(IUserService service) : ControllerBase
         return Created($"api/users/{userId}/addresses/{address.Id}", address);
     }
 
-    [HttpPut("{userId:int}/addresses/{addressId:int}")]
+    [HttpPut("{userId:guid}/addresses/{addressId:guid}")]
     public async Task<IActionResult> UpdateAddress(
-        int userId,
-        int addressId,
+        Guid userId,
+        Guid addressId,
         AddressRequest input,
         CancellationToken ct)
     {
@@ -57,10 +57,10 @@ public sealed class UsersController(IUserService service) : ControllerBase
         }
     }
 
-    [HttpDelete("{userId:int}/addresses/{addressId:int}")]
+    [HttpDelete("{userId:guid}/addresses/{addressId:guid}")]
     public async Task<IActionResult> DeleteAddress(
-        int userId,
-        int addressId,
+        Guid userId,
+        Guid addressId,
         CancellationToken ct)
     {
         return await service.DeleteAddress(userId, addressId, ct)
@@ -68,9 +68,9 @@ public sealed class UsersController(IUserService service) : ControllerBase
             : NotFound();
     }
 
-    [HttpPut("{userId:int}/lock")]
+    [HttpPut("{userId:guid}/lock")]
     public async Task<IActionResult> Lock(
-        int userId,
+        Guid userId,
         [FromQuery] bool locked,
         CancellationToken ct)
     {

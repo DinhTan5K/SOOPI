@@ -1,80 +1,204 @@
-/* SQL Server schema for SOOPI FOOD. Money is stored as VND decimal(12,2). */
-IF DB_ID(N'SoopiFood') IS NULL CREATE DATABASE SoopiFood;
-GO
-USE SoopiFood;
-GO
-CREATE TABLE dbo.Users (
- Id int IDENTITY PRIMARY KEY, FirebaseUid nvarchar(128) NULL UNIQUE, Email nvarchar(255) NOT NULL UNIQUE,
- FullName nvarchar(150) NOT NULL, AvatarUrl nvarchar(1000) NULL, Phone nvarchar(30) NOT NULL DEFAULT N'',
- Role nvarchar(20) NOT NULL DEFAULT N'Customer' CHECK (Role IN (N'Customer',N'Owner',N'Shipper',N'Admin')),
- IsLocked bit NOT NULL DEFAULT 0, CreatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME());
-CREATE TABLE dbo.UserAddresses (
- Id int IDENTITY PRIMARY KEY, UserId int NOT NULL REFERENCES dbo.Users(Id) ON DELETE CASCADE,
- Label nvarchar(50) NOT NULL, RecipientName nvarchar(150) NOT NULL, Phone nvarchar(30) NOT NULL,
- Line nvarchar(300) NOT NULL, Ward nvarchar(100) NOT NULL, District nvarchar(100) NOT NULL, City nvarchar(100) NOT NULL,
- Latitude decimal(10,7) NULL, Longitude decimal(10,7) NULL, IsDefault bit NOT NULL DEFAULT 0);
-CREATE TABLE dbo.Restaurants (
- Id int IDENTITY PRIMARY KEY, OwnerId int NULL REFERENCES dbo.Users(Id), Name nvarchar(200) NOT NULL,
- Description nvarchar(1000) NOT NULL DEFAULT N'', Phone nvarchar(30) NOT NULL DEFAULT N'', Address nvarchar(500) NOT NULL,
- City nvarchar(100) NOT NULL, ImageUrl nvarchar(1000) NULL, Latitude decimal(10,7) NULL, Longitude decimal(10,7) NULL,
- AverageRating decimal(3,2) NOT NULL DEFAULT 0 CHECK (AverageRating BETWEEN 0 AND 5),
- IsActive bit NOT NULL DEFAULT 1, IsAcceptingOrders bit NOT NULL DEFAULT 1);
-CREATE TABLE dbo.OpeningHours (
- Id int IDENTITY PRIMARY KEY, RestaurantId int NOT NULL REFERENCES dbo.Restaurants(Id) ON DELETE CASCADE,
- DayOfWeek tinyint NOT NULL CHECK (DayOfWeek BETWEEN 0 AND 6), OpensAt time NOT NULL, ClosesAt time NOT NULL,
- IsClosed bit NOT NULL DEFAULT 0, CONSTRAINT UQ_OpeningHours_Restaurant_Day UNIQUE(RestaurantId,DayOfWeek));
-CREATE TABLE dbo.MenuCategories (
- Id int IDENTITY PRIMARY KEY, RestaurantId int NOT NULL REFERENCES dbo.Restaurants(Id) ON DELETE CASCADE,
- Name nvarchar(100) NOT NULL, SortOrder int NOT NULL DEFAULT 0);
-CREATE TABLE dbo.MenuItems (
- Id int IDENTITY PRIMARY KEY, CategoryId int NOT NULL REFERENCES dbo.MenuCategories(Id) ON DELETE CASCADE,
- Name nvarchar(200) NOT NULL, Description nvarchar(1000) NOT NULL DEFAULT N'', Price decimal(12,2) NOT NULL CHECK(Price>=0),
- ImageUrl nvarchar(1000) NULL, IsAvailable bit NOT NULL DEFAULT 1);
-CREATE TABLE dbo.Carts (
- Id int IDENTITY PRIMARY KEY, UserId int NOT NULL UNIQUE REFERENCES dbo.Users(Id) ON DELETE CASCADE,
- RestaurantId int NULL REFERENCES dbo.Restaurants(Id), UpdatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME());
-CREATE TABLE dbo.CartItems (
- Id int IDENTITY PRIMARY KEY, CartId int NOT NULL REFERENCES dbo.Carts(Id) ON DELETE CASCADE,
- MenuItemId int NOT NULL REFERENCES dbo.MenuItems(Id), Quantity int NOT NULL CHECK(Quantity>0), Note nvarchar(500) NOT NULL DEFAULT N'',
- CONSTRAINT UQ_CartItems_Cart_Menu UNIQUE(CartId,MenuItemId));
-CREATE TABLE dbo.Coupons (
- Id int IDENTITY PRIMARY KEY, Code nvarchar(50) NOT NULL UNIQUE, DiscountType nvarchar(20) NOT NULL CHECK(DiscountType IN(N'Percent',N'Fixed')),
- DiscountValue decimal(12,2) NOT NULL CHECK(DiscountValue>0), MinOrderAmount decimal(12,2) NOT NULL DEFAULT 0,
- MaxDiscount decimal(12,2) NULL, StartsAt datetime2 NULL, EndsAt datetime2 NULL, UsageLimit int NULL,
- UsedCount int NOT NULL DEFAULT 0, IsActive bit NOT NULL DEFAULT 1);
-CREATE TABLE dbo.Orders (
- Id int IDENTITY PRIMARY KEY, OrderCode nvarchar(40) NOT NULL UNIQUE,
- CustomerId int NOT NULL REFERENCES dbo.Users(Id), RestaurantId int NOT NULL REFERENCES dbo.Restaurants(Id),
- ShipperId int NULL REFERENCES dbo.Users(Id), AddressId int NULL REFERENCES dbo.UserAddresses(Id) ON DELETE SET NULL,
- DeliveryAddress nvarchar(1000) NOT NULL, Subtotal decimal(12,2) NOT NULL, DiscountAmount decimal(12,2) NOT NULL DEFAULT 0,
- DeliveryFee decimal(12,2) NOT NULL DEFAULT 0, TotalAmount decimal(12,2) NOT NULL,
- Status nvarchar(30) NOT NULL DEFAULT N'Pending' CHECK(Status IN(N'Pending',N'Accepted',N'Preparing',N'ReadyForPickup',N'PickedUp',N'Delivering',N'Delivered',N'Cancelled')),
- PaymentMethod nvarchar(30) NOT NULL CHECK(PaymentMethod IN(N'Cash',N'Card',N'EWallet')),
- PaymentStatus nvarchar(30) NOT NULL DEFAULT N'Unpaid', CouponCode nvarchar(50) NULL, Note nvarchar(500) NOT NULL DEFAULT N'',
- CreatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME(), UpdatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME());
-CREATE INDEX IX_Orders_Customer_Created ON dbo.Orders(CustomerId,CreatedAt DESC);
-CREATE TABLE dbo.OrderItems (
- Id int IDENTITY PRIMARY KEY, OrderId int NOT NULL REFERENCES dbo.Orders(Id) ON DELETE CASCADE,
- MenuItemId int NULL REFERENCES dbo.MenuItems(Id) ON DELETE SET NULL, ItemName nvarchar(200) NOT NULL,
- UnitPrice decimal(12,2) NOT NULL, Quantity int NOT NULL CHECK(Quantity>0), Note nvarchar(500) NOT NULL DEFAULT N'');
-CREATE TABLE dbo.OrderStatusHistory (
- Id int IDENTITY PRIMARY KEY, OrderId int NOT NULL REFERENCES dbo.Orders(Id) ON DELETE CASCADE,
- Status nvarchar(30) NOT NULL, ChangedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME(), Note nvarchar(500) NULL);
-CREATE TABLE dbo.Payments (
- Id int IDENTITY PRIMARY KEY, OrderId int NOT NULL REFERENCES dbo.Orders(Id), Method nvarchar(30) NOT NULL,
- Amount decimal(12,2) NOT NULL, Status nvarchar(30) NOT NULL, ProviderReference nvarchar(200) NULL,
- CreatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME());
-CREATE TABLE dbo.Reviews (
- Id int IDENTITY PRIMARY KEY, OrderId int NOT NULL UNIQUE REFERENCES dbo.Orders(Id), CustomerId int NOT NULL REFERENCES dbo.Users(Id),
- RestaurantId int NOT NULL REFERENCES dbo.Restaurants(Id), ShipperId int NULL REFERENCES dbo.Users(Id),
- RestaurantRating tinyint NOT NULL CHECK(RestaurantRating BETWEEN 1 AND 5), ShipperRating tinyint NULL CHECK(ShipperRating BETWEEN 1 AND 5),
- Comment nvarchar(2000) NOT NULL DEFAULT N'', CreatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME());
-CREATE TABLE dbo.Favorites (
- Id int IDENTITY PRIMARY KEY, UserId int NOT NULL REFERENCES dbo.Users(Id) ON DELETE CASCADE,
- RestaurantId int NOT NULL REFERENCES dbo.Restaurants(Id) ON DELETE CASCADE, CreatedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME(),
- CONSTRAINT UQ_Favorites_User_Restaurant UNIQUE(UserId,RestaurantId));
-CREATE TABLE dbo.DeliveryLocations (
- Id bigint IDENTITY PRIMARY KEY, OrderId int NOT NULL REFERENCES dbo.Orders(Id) ON DELETE CASCADE,
- ShipperId int NOT NULL REFERENCES dbo.Users(Id), Latitude decimal(10,7) NOT NULL, Longitude decimal(10,7) NOT NULL,
- RecordedAt datetime2 NOT NULL DEFAULT SYSUTCDATETIME());
-CREATE INDEX IX_DeliveryLocations_Order_Time ON dbo.DeliveryLocations(OrderId,RecordedAt DESC);
+-- PostgreSQL schema for SOOPI FOOD.
+-- Connect to the soopifood database before running this script.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS users (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    firebase_uid varchar(128) NOT NULL,
+    full_name varchar(150) NOT NULL,
+    email varchar(150) NOT NULL,
+    phone_number varchar(20),
+    avatar_url varchar(500),
+    gender varchar(20) DEFAULT 'Nam',
+    date_of_birth timestamptz,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamptz,
+    role varchar(20) NOT NULL DEFAULT 'Customer'
+        CHECK (role IN ('Customer', 'Owner', 'Shipper', 'Admin')),
+    is_locked boolean NOT NULL DEFAULT false
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_users_firebase_uid"
+    ON users (firebase_uid);
+CREATE INDEX IF NOT EXISTS "IX_users_email"
+    ON users (email);
+
+CREATE TABLE IF NOT EXISTS user_addresses (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    firebase_uid varchar(128) NOT NULL,
+    user_id uuid,
+    label varchar(50) NOT NULL DEFAULT 'Nhà riêng',
+    recipient_name varchar(100) NOT NULL,
+    phone_number varchar(20) NOT NULL,
+    full_address varchar(500) NOT NULL,
+    note varchar(255),
+    is_default boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamptz,
+    CONSTRAINT "FK_user_addresses_users_user_id"
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "IX_user_addresses_firebase_uid"
+    ON user_addresses (firebase_uid);
+CREATE INDEX IF NOT EXISTS "IX_user_addresses_user_id"
+    ON user_addresses (user_id);
+
+CREATE TABLE IF NOT EXISTS "Restaurants" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "OwnerId" uuid REFERENCES users(id) ON DELETE SET NULL,
+    "Name" varchar(200) NOT NULL,
+    "Description" varchar(1000) NOT NULL DEFAULT '',
+    "Phone" varchar(30) NOT NULL DEFAULT '',
+    "Address" varchar(500) NOT NULL,
+    "City" varchar(100) NOT NULL,
+    "ImageUrl" varchar(1000),
+    "Latitude" numeric(10,7),
+    "Longitude" numeric(10,7),
+    "AverageRating" numeric(3,2) NOT NULL DEFAULT 0
+        CHECK ("AverageRating" BETWEEN 0 AND 5),
+    "IsActive" boolean NOT NULL DEFAULT true,
+    "IsAcceptingOrders" boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS "OpeningHours" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "RestaurantId" uuid NOT NULL REFERENCES "Restaurants"("Id") ON DELETE CASCADE,
+    "DayOfWeek" smallint NOT NULL CHECK ("DayOfWeek" BETWEEN 0 AND 6),
+    "OpensAt" time NOT NULL,
+    "ClosesAt" time NOT NULL,
+    "IsClosed" boolean NOT NULL DEFAULT false,
+    CONSTRAINT "UQ_OpeningHours_Restaurant_Day"
+        UNIQUE ("RestaurantId", "DayOfWeek")
+);
+
+CREATE TABLE IF NOT EXISTS "MenuCategories" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "RestaurantId" uuid NOT NULL REFERENCES "Restaurants"("Id") ON DELETE CASCADE,
+    "Name" varchar(100) NOT NULL,
+    "SortOrder" integer NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS "MenuItems" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "CategoryId" uuid NOT NULL REFERENCES "MenuCategories"("Id") ON DELETE CASCADE,
+    "Name" varchar(200) NOT NULL,
+    "Description" varchar(1000) NOT NULL DEFAULT '',
+    "Price" numeric(12,2) NOT NULL CHECK ("Price" >= 0),
+    "ImageUrl" varchar(1000),
+    "IsAvailable" boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS "Carts" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "UserId" uuid NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    "RestaurantId" uuid REFERENCES "Restaurants"("Id"),
+    "UpdatedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "CartItems" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "CartId" uuid NOT NULL REFERENCES "Carts"("Id") ON DELETE CASCADE,
+    "MenuItemId" uuid NOT NULL REFERENCES "MenuItems"("Id"),
+    "Quantity" integer NOT NULL CHECK ("Quantity" > 0),
+    "Note" varchar(500) NOT NULL DEFAULT '',
+    CONSTRAINT "UQ_CartItems_Cart_Menu" UNIQUE ("CartId", "MenuItemId")
+);
+
+CREATE TABLE IF NOT EXISTS "Coupons" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "Code" varchar(50) NOT NULL UNIQUE,
+    "DiscountType" varchar(20) NOT NULL CHECK ("DiscountType" IN ('Percent', 'Fixed')),
+    "DiscountValue" numeric(12,2) NOT NULL CHECK ("DiscountValue" > 0),
+    "MinOrderAmount" numeric(12,2) NOT NULL DEFAULT 0,
+    "MaxDiscount" numeric(12,2),
+    "StartsAt" timestamptz,
+    "EndsAt" timestamptz,
+    "UsageLimit" integer,
+    "UsedCount" integer NOT NULL DEFAULT 0,
+    "IsActive" boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS "Orders" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "OrderCode" varchar(40) NOT NULL UNIQUE,
+    "CustomerId" uuid NOT NULL REFERENCES users(id),
+    "RestaurantId" uuid NOT NULL REFERENCES "Restaurants"("Id"),
+    "ShipperId" uuid REFERENCES users(id),
+    "AddressId" uuid REFERENCES user_addresses(id) ON DELETE SET NULL,
+    "DeliveryAddress" varchar(1000) NOT NULL,
+    "Subtotal" numeric(12,2) NOT NULL,
+    "DiscountAmount" numeric(12,2) NOT NULL DEFAULT 0,
+    "DeliveryFee" numeric(12,2) NOT NULL DEFAULT 0,
+    "TotalAmount" numeric(12,2) NOT NULL,
+    "Status" varchar(30) NOT NULL DEFAULT 'Pending'
+        CHECK ("Status" IN ('Pending', 'Accepted', 'Preparing', 'ReadyForPickup', 'PickedUp', 'Delivering', 'Delivered', 'Cancelled')),
+    "PaymentMethod" varchar(30) NOT NULL
+        CHECK ("PaymentMethod" IN ('Cash', 'Card', 'EWallet')),
+    "PaymentStatus" varchar(30) NOT NULL DEFAULT 'Unpaid',
+    "CouponCode" varchar(50),
+    "Note" varchar(500) NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "UpdatedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "IX_Orders_Customer_Created"
+    ON "Orders" ("CustomerId", "CreatedAt" DESC);
+
+CREATE TABLE IF NOT EXISTS "OrderItems" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "OrderId" uuid NOT NULL REFERENCES "Orders"("Id") ON DELETE CASCADE,
+    "MenuItemId" uuid REFERENCES "MenuItems"("Id") ON DELETE SET NULL,
+    "ItemName" varchar(200) NOT NULL,
+    "UnitPrice" numeric(12,2) NOT NULL,
+    "Quantity" integer NOT NULL CHECK ("Quantity" > 0),
+    "Note" varchar(500) NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS "OrderStatusHistory" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "OrderId" uuid NOT NULL REFERENCES "Orders"("Id") ON DELETE CASCADE,
+    "Status" varchar(30) NOT NULL,
+    "ChangedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Note" varchar(500)
+);
+
+CREATE TABLE IF NOT EXISTS "Payments" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "OrderId" uuid NOT NULL REFERENCES "Orders"("Id"),
+    "Method" varchar(30) NOT NULL,
+    "Amount" numeric(12,2) NOT NULL,
+    "Status" varchar(30) NOT NULL,
+    "ProviderReference" varchar(200),
+    "CreatedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Reviews" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "OrderId" uuid NOT NULL UNIQUE REFERENCES "Orders"("Id"),
+    "CustomerId" uuid NOT NULL REFERENCES users(id),
+    "RestaurantId" uuid NOT NULL REFERENCES "Restaurants"("Id"),
+    "ShipperId" uuid REFERENCES users(id),
+    "RestaurantRating" smallint NOT NULL CHECK ("RestaurantRating" BETWEEN 1 AND 5),
+    "ShipperRating" smallint CHECK ("ShipperRating" BETWEEN 1 AND 5),
+    "Comment" varchar(2000) NOT NULL DEFAULT '',
+    "CreatedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Favorites" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "UserId" uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "RestaurantId" uuid NOT NULL REFERENCES "Restaurants"("Id") ON DELETE CASCADE,
+    "CreatedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "UQ_Favorites_User_Restaurant" UNIQUE ("UserId", "RestaurantId")
+);
+
+CREATE TABLE IF NOT EXISTS "DeliveryLocations" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "OrderId" uuid NOT NULL REFERENCES "Orders"("Id") ON DELETE CASCADE,
+    "ShipperId" uuid NOT NULL REFERENCES users(id),
+    "Latitude" numeric(10,7) NOT NULL,
+    "Longitude" numeric(10,7) NOT NULL,
+    "RecordedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS "IX_DeliveryLocations_Order_Time"
+    ON "DeliveryLocations" ("OrderId", "RecordedAt" DESC);

@@ -9,26 +9,22 @@ public sealed record AddressRequest(
     string Label,
     string RecipientName,
     string Phone,
-    string Line,
-    string Ward,
-    string District,
-    string City,
-    decimal? Latitude,
-    decimal? Longitude,
+    string FullAddress,
+    string? Note,
     bool IsDefault);
 
 public sealed record MenuItemRequest(
-    int CategoryId,
+    Guid CategoryId,
     string Name,
     string Description,
     decimal Price,
     string? ImageUrl,
     bool IsAvailable);
 
-public sealed record CartLineRequest(int MenuItemId, int Quantity, string Note);
+public sealed record CartLineRequest(Guid MenuItemId, int Quantity, string Note);
 
 public sealed record CheckoutRequest(
-    int AddressId,
+    Guid AddressId,
     string PaymentMethod,
     string? CouponCode,
     string Note);

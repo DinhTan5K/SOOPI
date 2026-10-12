@@ -6,21 +6,21 @@ namespace SoopiFoodBE.DataAccess.Repositories;
 
 public interface IUserRepository
 {
-    Task<AppUser?> FindAsync(int id, CancellationToken ct);
+    Task<AppUser?> FindAsync(Guid id, CancellationToken ct);
     Task<AppUser?> FindByEmailAsync(string email, CancellationToken ct);
-    Task<List<UserAddress>> AddressesAsync(int userId, CancellationToken ct);
+    Task<List<UserAddress>> AddressesAsync(Guid userId, CancellationToken ct);
 }
 
 public sealed class UserRepository(SoopiDbContext db) : IUserRepository
 {
-    public Task<AppUser?> FindAsync(int id, CancellationToken ct) => db.Users
+    public Task<AppUser?> FindAsync(Guid id, CancellationToken ct) => db.Users
         .Include(user => user.Addresses)
         .FirstOrDefaultAsync(user => user.Id == id, ct);
 
     public Task<AppUser?> FindByEmailAsync(string email, CancellationToken ct) =>
         db.Users.FirstOrDefaultAsync(user => user.Email == email, ct);
 
-    public Task<List<UserAddress>> AddressesAsync(int userId, CancellationToken ct) =>
+    public Task<List<UserAddress>> AddressesAsync(Guid userId, CancellationToken ct) =>
         db.Addresses
             .Where(address => address.UserId == userId)
             .OrderByDescending(address => address.IsDefault)
@@ -38,8 +38,8 @@ public interface IRestaurantRepository
         double? radiusKm,
         CancellationToken ct);
 
-    Task<Restaurant?> GetAsync(int id, CancellationToken ct);
-    Task<List<MenuItem>> MenuAsync(int restaurantId, CancellationToken ct);
+    Task<Restaurant?> GetAsync(Guid id, CancellationToken ct);
+    Task<List<MenuItem>> MenuAsync(Guid restaurantId, CancellationToken ct);
 }
 
 public sealed class RestaurantRepository(SoopiDbContext db) : IRestaurantRepository
@@ -92,13 +92,13 @@ public sealed class RestaurantRepository(SoopiDbContext db) : IRestaurantReposit
         return results;
     }
 
-    public Task<Restaurant?> GetAsync(int id, CancellationToken ct) => db.Restaurants
+    public Task<Restaurant?> GetAsync(Guid id, CancellationToken ct) => db.Restaurants
         .Include(restaurant => restaurant.Categories)
             .ThenInclude(category => category.Items)
         .Include(restaurant => restaurant.OpeningHours)
         .FirstOrDefaultAsync(restaurant => restaurant.Id == id, ct);
 
-    public Task<List<MenuItem>> MenuAsync(int restaurantId, CancellationToken ct) =>
+    public Task<List<MenuItem>> MenuAsync(Guid restaurantId, CancellationToken ct) =>
         db.MenuItems
             .Include(item => item.Category)
             .Where(item => item.Category!.RestaurantId == restaurantId)
@@ -121,13 +121,13 @@ public sealed class RestaurantRepository(SoopiDbContext db) : IRestaurantReposit
 
 public interface IOrderRepository
 {
-    Task<FoodOrder?> GetForCustomerAsync(int id, int userId, CancellationToken ct);
-    Task<List<FoodOrder>> HistoryAsync(int userId, CancellationToken ct);
+    Task<FoodOrder?> GetForCustomerAsync(Guid id, Guid userId, CancellationToken ct);
+    Task<List<FoodOrder>> HistoryAsync(Guid userId, CancellationToken ct);
 }
 
 public sealed class OrderRepository(SoopiDbContext db) : IOrderRepository
 {
-    public Task<FoodOrder?> GetForCustomerAsync(int id, int userId, CancellationToken ct) =>
+    public Task<FoodOrder?> GetForCustomerAsync(Guid id, Guid userId, CancellationToken ct) =>
         db.Orders
             .Include(order => order.Items)
             .Include(order => order.StatusHistory)
@@ -140,7 +140,7 @@ public sealed class OrderRepository(SoopiDbContext db) : IOrderRepository
                 order => order.Id == id && order.CustomerId == userId,
                 ct);
 
-    public Task<List<FoodOrder>> HistoryAsync(int userId, CancellationToken ct) =>
+    public Task<List<FoodOrder>> HistoryAsync(Guid userId, CancellationToken ct) =>
         db.Orders
             .Where(order => order.CustomerId == userId)
             .OrderByDescending(order => order.CreatedAt)

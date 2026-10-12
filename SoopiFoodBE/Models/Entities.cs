@@ -2,44 +2,46 @@ namespace SoopiFoodBE.Models;
 
 public interface IEntity
 {
-    int Id { get; set; }
+    Guid Id { get; set; }
 }
 
 public sealed class AppUser : IEntity
 {
-    public int Id { get; set; }
-    public string? FirebaseUid { get; set; }
+    public Guid Id { get; set; }
+    public string FirebaseUid { get; set; } = "";
     public string Email { get; set; } = "";
     public string FullName { get; set; } = "";
     public string? AvatarUrl { get; set; }
-    public string Phone { get; set; } = "";
+    public string? Phone { get; set; }
+    public string Gender { get; set; } = "Nam";
+    public DateTimeOffset? DateOfBirth { get; set; }
     public string Role { get; set; } = "Customer";
     public bool IsLocked { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? UpdatedAt { get; set; }
     public ICollection<UserAddress> Addresses { get; set; } = [];
 }
 
 public sealed class UserAddress : IEntity
 {
-    public int Id { get; set; }
-    public int UserId { get; set; }
+    public Guid Id { get; set; }
+    public Guid? UserId { get; set; }
     public AppUser? User { get; set; }
-    public string Label { get; set; } = "Nhà";
+    public string FirebaseUid { get; set; } = "";
+    public string Label { get; set; } = "Nhà riêng";
     public string RecipientName { get; set; } = "";
     public string Phone { get; set; } = "";
-    public string Line { get; set; } = "";
-    public string Ward { get; set; } = "";
-    public string District { get; set; } = "";
-    public string City { get; set; } = "";
-    public decimal? Latitude { get; set; }
-    public decimal? Longitude { get; set; }
+    public string FullAddress { get; set; } = "";
+    public string? Note { get; set; }
     public bool IsDefault { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? UpdatedAt { get; set; }
 }
 
 public sealed class Restaurant : IEntity
 {
-    public int Id { get; set; }
-    public int? OwnerId { get; set; }
+    public Guid Id { get; set; }
+    public Guid? OwnerId { get; set; }
     public AppUser? Owner { get; set; }
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
@@ -58,8 +60,8 @@ public sealed class Restaurant : IEntity
 
 public sealed class OpeningHour : IEntity
 {
-    public int Id { get; set; }
-    public int RestaurantId { get; set; }
+    public Guid Id { get; set; }
+    public Guid RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
     public byte DayOfWeek { get; set; }
     public TimeOnly OpensAt { get; set; }
@@ -69,8 +71,8 @@ public sealed class OpeningHour : IEntity
 
 public sealed class MenuCategory : IEntity
 {
-    public int Id { get; set; }
-    public int RestaurantId { get; set; }
+    public Guid Id { get; set; }
+    public Guid RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
     public string Name { get; set; } = "";
     public int SortOrder { get; set; }
@@ -79,8 +81,8 @@ public sealed class MenuCategory : IEntity
 
 public sealed class MenuItem : IEntity
 {
-    public int Id { get; set; }
-    public int CategoryId { get; set; }
+    public Guid Id { get; set; }
+    public Guid CategoryId { get; set; }
     public MenuCategory? Category { get; set; }
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
@@ -91,10 +93,10 @@ public sealed class MenuItem : IEntity
 
 public sealed class ShoppingCart : IEntity
 {
-    public int Id { get; set; }
-    public int UserId { get; set; }
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
     public AppUser? User { get; set; }
-    public int? RestaurantId { get; set; }
+    public Guid? RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public ICollection<CartItem> Items { get; set; } = [];
@@ -102,10 +104,10 @@ public sealed class ShoppingCart : IEntity
 
 public sealed class CartItem : IEntity
 {
-    public int Id { get; set; }
-    public int CartId { get; set; }
+    public Guid Id { get; set; }
+    public Guid CartId { get; set; }
     public ShoppingCart? Cart { get; set; }
-    public int MenuItemId { get; set; }
+    public Guid MenuItemId { get; set; }
     public MenuItem? MenuItem { get; set; }
     public int Quantity { get; set; }
     public string Note { get; set; } = "";
@@ -113,7 +115,7 @@ public sealed class CartItem : IEntity
 
 public sealed class Coupon : IEntity
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
     public string Code { get; set; } = "";
     public string DiscountType { get; set; } = "Percent";
     public decimal DiscountValue { get; set; }
@@ -128,15 +130,15 @@ public sealed class Coupon : IEntity
 
 public sealed class FoodOrder : IEntity
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; }
     public string OrderCode { get; set; } = Guid.NewGuid().ToString("N");
-    public int CustomerId { get; set; }
+    public Guid CustomerId { get; set; }
     public AppUser? Customer { get; set; }
-    public int RestaurantId { get; set; }
+    public Guid RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
-    public int? ShipperId { get; set; }
+    public Guid? ShipperId { get; set; }
     public AppUser? Shipper { get; set; }
-    public int? AddressId { get; set; }
+    public Guid? AddressId { get; set; }
     public UserAddress? Address { get; set; }
     public string DeliveryAddress { get; set; } = "";
     public decimal Subtotal { get; set; }
@@ -157,10 +159,10 @@ public sealed class FoodOrder : IEntity
 
 public sealed class OrderItem : IEntity
 {
-    public int Id { get; set; }
-    public int OrderId { get; set; }
+    public Guid Id { get; set; }
+    public Guid OrderId { get; set; }
     public FoodOrder? Order { get; set; }
-    public int? MenuItemId { get; set; }
+    public Guid? MenuItemId { get; set; }
     public string ItemName { get; set; } = "";
     public decimal UnitPrice { get; set; }
     public int Quantity { get; set; }
@@ -169,8 +171,8 @@ public sealed class OrderItem : IEntity
 
 public sealed class OrderStatusHistory : IEntity
 {
-    public int Id { get; set; }
-    public int OrderId { get; set; }
+    public Guid Id { get; set; }
+    public Guid OrderId { get; set; }
     public FoodOrder? Order { get; set; }
     public string Status { get; set; } = "";
     public DateTime ChangedAt { get; set; } = DateTime.UtcNow;
@@ -179,14 +181,14 @@ public sealed class OrderStatusHistory : IEntity
 
 public sealed class Review : IEntity
 {
-    public int Id { get; set; }
-    public int OrderId { get; set; }
+    public Guid Id { get; set; }
+    public Guid OrderId { get; set; }
     public FoodOrder? Order { get; set; }
-    public int CustomerId { get; set; }
+    public Guid CustomerId { get; set; }
     public AppUser? Customer { get; set; }
-    public int RestaurantId { get; set; }
+    public Guid RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
-    public int? ShipperId { get; set; }
+    public Guid? ShipperId { get; set; }
     public AppUser? Shipper { get; set; }
     public byte RestaurantRating { get; set; }
     public byte? ShipperRating { get; set; }
@@ -196,18 +198,18 @@ public sealed class Review : IEntity
 
 public sealed class Favorite : IEntity
 {
-    public int Id { get; set; }
-    public int UserId { get; set; }
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
     public AppUser? User { get; set; }
-    public int RestaurantId { get; set; }
+    public Guid RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class Payment : IEntity
 {
-    public int Id { get; set; }
-    public int OrderId { get; set; }
+    public Guid Id { get; set; }
+    public Guid OrderId { get; set; }
     public FoodOrder? Order { get; set; }
     public string Method { get; set; } = "Cash";
     public decimal Amount { get; set; }
@@ -218,10 +220,10 @@ public sealed class Payment : IEntity
 
 public sealed class DeliveryLocation
 {
-    public long Id { get; set; }
-    public int OrderId { get; set; }
+    public Guid Id { get; set; }
+    public Guid OrderId { get; set; }
     public FoodOrder? Order { get; set; }
-    public int ShipperId { get; set; }
+    public Guid ShipperId { get; set; }
     public decimal Latitude { get; set; }
     public decimal Longitude { get; set; }
     public DateTime RecordedAt { get; set; } = DateTime.UtcNow;

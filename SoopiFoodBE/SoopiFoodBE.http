@@ -5,5 +5,5 @@ GET {{SoopiFoodBE_HostAddress}}/api/restaurants
 Accept: application/json
 
 ### Get a restaurant menu
-GET {{SoopiFoodBE_HostAddress}}/api/restaurants/1/menu
+GET {{SoopiFoodBE_HostAddress}}/api/restaurants/00000000-0000-0000-0000-000000000000/menu
 Accept: application/json

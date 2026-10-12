@@ -5,18 +5,18 @@ using SoopiFoodBE.Services;
 namespace SoopiFoodBE.Controllers;
 
 [ApiController]
-[Route("api/users/{userId:int}")]
+[Route("api/users/{userId:guid}")]
 public sealed class OrdersController(
     IOrderService orders,
     IReviewService reviews) : ControllerBase
 {
     [HttpGet("cart")]
-    public async Task<IActionResult> Cart(int userId, CancellationToken ct) =>
+    public async Task<IActionResult> Cart(Guid userId, CancellationToken ct) =>
         Ok(await orders.Cart(userId, ct));
 
     [HttpPut("cart/items")]
     public async Task<IActionResult> CartItem(
-        int userId,
+        Guid userId,
         CartLineRequest input,
         CancellationToken ct)
     {
@@ -36,7 +36,7 @@ public sealed class OrdersController(
 
     [HttpPost("orders")]
     public async Task<IActionResult> Checkout(
-        int userId,
+        Guid userId,
         CheckoutRequest input,
         CancellationToken ct)
     {
@@ -55,23 +55,23 @@ public sealed class OrdersController(
     }
 
     [HttpGet("orders")]
-    public async Task<IActionResult> History(int userId, CancellationToken ct) =>
+    public async Task<IActionResult> History(Guid userId, CancellationToken ct) =>
         Ok(await orders.History(userId, ct));
 
-    [HttpGet("orders/{orderId:int}")]
+    [HttpGet("orders/{orderId:guid}")]
     public async Task<IActionResult> Track(
-        int userId,
-        int orderId,
+        Guid userId,
+        Guid orderId,
         CancellationToken ct)
     {
         var order = await orders.Track(userId, orderId, ct);
         return order is null ? NotFound() : Ok(order);
     }
 
-    [HttpPost("orders/{orderId:int}/review")]
+    [HttpPost("orders/{orderId:guid}/review")]
     public async Task<IActionResult> Review(
-        int userId,
-        int orderId,
+        Guid userId,
+        Guid orderId,
         ReviewRequest input,
         CancellationToken ct)
     {
@@ -93,10 +93,10 @@ public sealed class OrdersController(
         }
     }
 
-    [HttpPut("orders/{orderId:int}/delivery")]
+    [HttpPut("orders/{orderId:guid}/delivery")]
     public async Task<IActionResult> Delivery(
-        int userId,
-        int orderId,
+        Guid userId,
+        Guid orderId,
         DeliveryUpdate input,
         CancellationToken ct)
     {

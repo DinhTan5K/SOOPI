@@ -17,23 +17,23 @@ public interface IRestaurantService
         double? radiusKm,
         CancellationToken ct);
 
-    Task<Restaurant?> Get(int id, CancellationToken ct);
-    Task<List<MenuItem>> Menu(int id, CancellationToken ct);
-    Task<bool> Update(int id, int ownerId, RestaurantUpdate input, CancellationToken ct);
+    Task<Restaurant?> Get(Guid id, CancellationToken ct);
+    Task<List<MenuItem>> Menu(Guid id, CancellationToken ct);
+    Task<bool> Update(Guid id, Guid ownerId, RestaurantUpdate input, CancellationToken ct);
     Task<bool> SaveHours(
-        int restaurantId,
-        int ownerId,
+        Guid restaurantId,
+        Guid ownerId,
         byte day,
         OpeningHourRequest input,
         CancellationToken ct);
 
     Task<MenuItem> SaveMenu(
-        int ownerId,
-        int? id,
+        Guid ownerId,
+        Guid? id,
         MenuItemRequest input,
         CancellationToken ct);
 
-    Task<bool> DeleteMenu(int ownerId, int id, CancellationToken ct);
+    Task<bool> DeleteMenu(Guid ownerId, Guid id, CancellationToken ct);
 }
 
 public sealed class RestaurantService(
@@ -56,15 +56,15 @@ public sealed class RestaurantService(
             radiusKm,
             ct);
 
-    public Task<Restaurant?> Get(int id, CancellationToken ct) =>
+    public Task<Restaurant?> Get(Guid id, CancellationToken ct) =>
         repository.GetAsync(id, ct);
 
-    public Task<List<MenuItem>> Menu(int id, CancellationToken ct) =>
+    public Task<List<MenuItem>> Menu(Guid id, CancellationToken ct) =>
         repository.MenuAsync(id, ct);
 
     public async Task<bool> Update(
-        int id,
-        int ownerId,
+        Guid id,
+        Guid ownerId,
         RestaurantUpdate input,
         CancellationToken ct)
     {
@@ -88,8 +88,8 @@ public sealed class RestaurantService(
     }
 
     public async Task<bool> SaveHours(
-        int restaurantId,
-        int ownerId,
+        Guid restaurantId,
+        Guid ownerId,
         byte day,
         OpeningHourRequest input,
         CancellationToken ct)
@@ -127,8 +127,8 @@ public sealed class RestaurantService(
     }
 
     public async Task<MenuItem> SaveMenu(
-        int ownerId,
-        int? id,
+        Guid ownerId,
+        Guid? id,
         MenuItemRequest input,
         CancellationToken ct)
     {
@@ -164,7 +164,7 @@ public sealed class RestaurantService(
         return menuItem;
     }
 
-    public async Task<bool> DeleteMenu(int ownerId, int id, CancellationToken ct)
+    public async Task<bool> DeleteMenu(Guid ownerId, Guid id, CancellationToken ct)
     {
         var menuItem = await db.MenuItems.FirstOrDefaultAsync(
             item => item.Id == id && item.Category!.Restaurant!.OwnerId == ownerId,

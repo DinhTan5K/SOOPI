@@ -8,25 +8,25 @@ namespace SoopiFoodBE.Services;
 public interface IReviewService
 {
     Task<Review> Create(
-        int userId,
-        int orderId,
+        Guid userId,
+        Guid orderId,
         ReviewRequest input,
         CancellationToken ct);
 
     Task<bool> Favorite(
-        int userId,
-        int restaurantId,
+        Guid userId,
+        Guid restaurantId,
         bool add,
         CancellationToken ct);
 
-    Task<List<Restaurant>> Favorites(int userId, CancellationToken ct);
+    Task<List<Restaurant>> Favorites(Guid userId, CancellationToken ct);
 }
 
 public sealed class ReviewService(SoopiDbContext db) : IReviewService
 {
     public async Task<Review> Create(
-        int userId,
-        int orderId,
+        Guid userId,
+        Guid orderId,
         ReviewRequest input,
         CancellationToken ct)
     {
@@ -81,8 +81,8 @@ public sealed class ReviewService(SoopiDbContext db) : IReviewService
     }
 
     public async Task<bool> Favorite(
-        int userId,
-        int restaurantId,
+        Guid userId,
+        Guid restaurantId,
         bool add,
         CancellationToken ct)
     {
@@ -117,7 +117,7 @@ public sealed class ReviewService(SoopiDbContext db) : IReviewService
         return true;
     }
 
-    public Task<List<Restaurant>> Favorites(int userId, CancellationToken ct) =>
+    public Task<List<Restaurant>> Favorites(Guid userId, CancellationToken ct) =>
         db.Favorites
             .Where(favorite => favorite.UserId == userId)
             .Select(favorite => favorite.Restaurant!)

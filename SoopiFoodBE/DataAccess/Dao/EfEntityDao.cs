@@ -9,7 +9,7 @@ public sealed class EfEntityDao<T>(SoopiDbContext db) : IEntityDao<T>
 {
     private readonly DbSet<T> _set = db.Set<T>();
 
-    public Task<T?> GetAsync(int id, CancellationToken ct = default) =>
+    public Task<T?> GetAsync(Guid id, CancellationToken ct = default) =>
         _set.FindAsync([id], ct).AsTask();
 
     public Task<List<T>> ListAsync(CancellationToken ct = default) =>

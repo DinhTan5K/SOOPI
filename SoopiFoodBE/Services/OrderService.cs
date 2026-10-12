@@ -8,17 +8,17 @@ namespace SoopiFoodBE.Services;
 
 public interface IOrderService
 {
-    Task<ShoppingCart> Cart(int userId, CancellationToken ct);
-    Task<ShoppingCart> AddCartLine(int userId, CartLineRequest input, CancellationToken ct);
-    Task<FoodOrder> Checkout(int userId, CheckoutRequest input, CancellationToken ct);
-    Task<List<FoodOrder>> History(int userId, CancellationToken ct);
-    Task<FoodOrder?> Track(int userId, int orderId, CancellationToken ct);
-    Task<bool> UpdateDelivery(int actorId, int orderId, DeliveryUpdate input, CancellationToken ct);
+    Task<ShoppingCart> Cart(Guid userId, CancellationToken ct);
+    Task<ShoppingCart> AddCartLine(Guid userId, CartLineRequest input, CancellationToken ct);
+    Task<FoodOrder> Checkout(Guid userId, CheckoutRequest input, CancellationToken ct);
+    Task<List<FoodOrder>> History(Guid userId, CancellationToken ct);
+    Task<FoodOrder?> Track(Guid userId, Guid orderId, CancellationToken ct);
+    Task<bool> UpdateDelivery(Guid actorId, Guid orderId, DeliveryUpdate input, CancellationToken ct);
 }
 
 public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : IOrderService
 {
-    public async Task<ShoppingCart> Cart(int userId, CancellationToken ct)
+    public async Task<ShoppingCart> Cart(Guid userId, CancellationToken ct)
     {
         return await db.Carts
             .Include(cart => cart.Items)
@@ -28,7 +28,7 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
     }
 
     public async Task<ShoppingCart> AddCartLine(
-        int userId,
+        Guid userId,
         CartLineRequest input,
         CancellationToken ct)
     {
@@ -93,7 +93,7 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
     }
 
     public async Task<FoodOrder> Checkout(
-        int userId,
+        Guid userId,
         CheckoutRequest input,
         CancellationToken ct)
     {
@@ -151,8 +151,7 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
             CustomerId = userId,
             RestaurantId = restaurant.Id,
             AddressId = address.Id,
-            DeliveryAddress =
-                $"{address.Line}, {address.Ward}, {address.District}, {address.City}",
+            DeliveryAddress = address.FullAddress,
             Subtotal = subtotal,
             DiscountAmount = discount,
             DeliveryFee = 15000,
@@ -187,15 +186,15 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
         return order;
     }
 
-    public Task<List<FoodOrder>> History(int userId, CancellationToken ct) =>
+    public Task<List<FoodOrder>> History(Guid userId, CancellationToken ct) =>
         orders.HistoryAsync(userId, ct);
 
-    public Task<FoodOrder?> Track(int userId, int orderId, CancellationToken ct) =>
+    public Task<FoodOrder?> Track(Guid userId, Guid orderId, CancellationToken ct) =>
         orders.GetForCustomerAsync(orderId, userId, ct);
 
     public async Task<bool> UpdateDelivery(
-        int actorId,
-        int orderId,
+        Guid actorId,
+        Guid orderId,
         DeliveryUpdate input,
         CancellationToken ct)
     {
