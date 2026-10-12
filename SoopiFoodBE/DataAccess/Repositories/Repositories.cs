@@ -54,38 +54,62 @@ public sealed class RestaurantRepository(SoopiDbContext db) : IRestaurantReposit
         CancellationToken ct)
     {
         var restaurants = db.Restaurants
+            .Include(restaurant => restaurant.Categories)
+                .ThenInclude(cat => cat.Items)
             .AsNoTracking()
             .Where(restaurant => restaurant.IsActive && restaurant.IsAcceptingOrders);
 
         if (!string.IsNullOrWhiteSpace(query))
         {
+            var pattern = $"%{query.Trim()}%";
             restaurants = restaurants.Where(restaurant =>
-                restaurant.Name.Contains(query) || restaurant.Address.Contains(query));
+                EF.Functions.ILike(restaurant.Name, pattern) ||
+                EF.Functions.ILike(restaurant.Address, pattern) ||
+                EF.Functions.ILike(restaurant.Description, pattern) ||
+                restaurant.Categories.Any(cat =>
+                    EF.Functions.ILike(cat.Name, pattern) ||
+                    cat.Items.Any(item => EF.Functions.ILike(item.Name, pattern))));
         }
 
         if (minRating.HasValue)
             restaurants = restaurants.Where(restaurant =>
                 restaurant.AverageRating >= minRating.Value);
 
-        if (!string.IsNullOrWhiteSpace(category))
+        if (!string.IsNullOrWhiteSpace(category) && category != "Tất cả")
         {
+            var catPattern = $"%{category.Trim()}%";
             restaurants = restaurants.Where(restaurant =>
-                restaurant.Categories.Any(item => item.Name == category));
+                restaurant.Categories.Any(item => EF.Functions.ILike(item.Name, catPattern)));
         }
 
         var results = await restaurants
             .OrderByDescending(restaurant => restaurant.AverageRating)
             .ToListAsync(ct);
 
-        if (latitude.HasValue && longitude.HasValue && radiusKm.HasValue)
+        if (latitude.HasValue && longitude.HasValue)
         {
-            results = results.Where(restaurant =>
-                    restaurant.Latitude.HasValue && restaurant.Longitude.HasValue
-                    && Distance(
+            if (radiusKm.HasValue && radiusKm > 0)
+            {
+                results = results.Where(restaurant =>
+                        restaurant.Latitude.HasValue && restaurant.Longitude.HasValue
+                        && Distance(
+                            latitude.Value,
+                            longitude.Value,
+                            (double)restaurant.Latitude.Value,
+                            (double)restaurant.Longitude.Value) <= radiusKm.Value)
+                    .ToList();
+            }
+
+            // Sắp xếp ưu tiên theo khoảng cách gần nhất tới địa chỉ giao hàng
+            results = results.OrderBy(restaurant =>
+                restaurant.Latitude.HasValue && restaurant.Longitude.HasValue
+                    ? Distance(
                         latitude.Value,
                         longitude.Value,
                         (double)restaurant.Latitude.Value,
-                        (double)restaurant.Longitude.Value) <= radiusKm.Value)
+                        (double)restaurant.Longitude.Value)
+                    : double.MaxValue)
+                .ThenByDescending(restaurant => restaurant.AverageRating)
                 .ToList();
         }
 

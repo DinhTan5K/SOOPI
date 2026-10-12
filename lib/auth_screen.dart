@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'home.dart';
 import 'services/auth_service.dart';
 import 'merchant/merchant_login_screen.dart';
-import 'main.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});

@@ -8,7 +8,7 @@ namespace SoopiFoodBE.Services;
 
 public interface IRestaurantService
 {
-    Task<List<Restaurant>> Search(
+    Task<List<RestaurantResponse>> Search(
         string? query,
         string? category,
         decimal? rating,
@@ -17,8 +17,8 @@ public interface IRestaurantService
         double? radiusKm,
         CancellationToken ct);
 
-    Task<Restaurant?> Get(Guid id, CancellationToken ct);
-    Task<List<MenuItem>> Menu(Guid id, CancellationToken ct);
+    Task<RestaurantResponse?> Get(Guid id, CancellationToken ct);
+    Task<List<MenuItemResponse>> Menu(Guid id, CancellationToken ct);
     Task<bool> Update(Guid id, Guid ownerId, RestaurantUpdate input, CancellationToken ct);
     Task<bool> SaveHours(
         Guid restaurantId,
@@ -27,7 +27,7 @@ public interface IRestaurantService
         OpeningHourRequest input,
         CancellationToken ct);
 
-    Task<MenuItem> SaveMenu(
+    Task<MenuItemResponse> SaveMenu(
         Guid ownerId,
         Guid? id,
         MenuItemRequest input,
@@ -40,14 +40,16 @@ public sealed class RestaurantService(
     SoopiDbContext db,
     IRestaurantRepository repository) : IRestaurantService
 {
-    public Task<List<Restaurant>> Search(
+    public async Task<List<RestaurantResponse>> Search(
         string? query,
         string? category,
         decimal? rating,
         double? latitude,
         double? longitude,
         double? radiusKm,
-        CancellationToken ct) => repository.SearchAsync(
+        CancellationToken ct)
+    {
+        var list = await repository.SearchAsync(
             query,
             category,
             rating,
@@ -55,12 +57,20 @@ public sealed class RestaurantService(
             longitude,
             radiusKm,
             ct);
+        return list.Select(r => r.ToResponse()).ToList();
+    }
 
-    public Task<Restaurant?> Get(Guid id, CancellationToken ct) =>
-        repository.GetAsync(id, ct);
+    public async Task<RestaurantResponse?> Get(Guid id, CancellationToken ct)
+    {
+        var restaurant = await repository.GetAsync(id, ct);
+        return restaurant?.ToResponse();
+    }
 
-    public Task<List<MenuItem>> Menu(Guid id, CancellationToken ct) =>
-        repository.MenuAsync(id, ct);
+    public async Task<List<MenuItemResponse>> Menu(Guid id, CancellationToken ct)
+    {
+        var items = await repository.MenuAsync(id, ct);
+        return items.Select(i => i.ToResponse()).ToList();
+    }
 
     public async Task<bool> Update(
         Guid id,
@@ -126,7 +136,7 @@ public sealed class RestaurantService(
         return true;
     }
 
-    public async Task<MenuItem> SaveMenu(
+    public async Task<MenuItemResponse> SaveMenu(
         Guid ownerId,
         Guid? id,
         MenuItemRequest input,
@@ -161,7 +171,7 @@ public sealed class RestaurantService(
             db.MenuItems.Add(menuItem);
 
         await db.SaveChangesAsync(ct);
-        return menuItem;
+        return menuItem.ToResponse();
     }
 
     public async Task<bool> DeleteMenu(Guid ownerId, Guid id, CancellationToken ct)
