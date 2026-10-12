@@ -1,7 +1,12 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'merchant_data.dart';
+import 'menu_photo.dart';
 
 class MenuEditor extends StatefulWidget {
   const MenuEditor({super.key, this.item});
@@ -17,6 +22,8 @@ class _MenuEditorState extends State<MenuEditor> {
   late final TextEditingController _description;
   late String _category;
   late bool _available;
+  String? _imageBase64;
+  bool _picking = false;
   @override
   void initState() {
     super.initState();
@@ -25,6 +32,48 @@ class _MenuEditorState extends State<MenuEditor> {
     _description = TextEditingController(text: widget.item?.description ?? '');
     _category = widget.item?.category ?? foodCategories.first;
     _available = widget.item?.available ?? true;
+    _imageBase64 = widget.item?.imageBase64;
+  }
+
+  Future<void> _pickPhoto() async {
+    if (_picking) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _picking = true);
+    try {
+      final photo = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 80,
+        requestFullMetadata: false,
+      );
+      if (photo == null) return;
+      if (await photo.length() > 2 * 1024 * 1024) {
+        throw const FormatException('Chọn ảnh có dung lượng tối đa 2 MB.');
+      }
+      final bytes = await photo.readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      codec.dispose();
+      if (mounted) setState(() => _imageBase64 = base64Encode(bytes));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is FormatException
+                  ? error.message
+                  : error is MissingPluginException
+                  ? 'Thư viện ảnh chưa được tích hợp vào bản app này. Hãy dừng app và chạy lại bản build Android mới.'
+                  : error is PlatformException
+                  ? 'Không thể mở thư viện ảnh (${error.code}). ${error.message ?? 'Vui lòng thử lại.'}'
+                  : 'Không thể chọn ảnh. Vui lòng thử ảnh JPG hoặc PNG khác.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
   }
 
   @override
@@ -46,6 +95,7 @@ class _MenuEditorState extends State<MenuEditor> {
         category: _category,
         description: _description.text.trim(),
         available: _available,
+        imageBase64: _imageBase64,
       ),
     );
   }
@@ -82,6 +132,45 @@ class _MenuEditorState extends State<MenuEditor> {
                   icon: const Icon(Icons.close),
                 ),
               ],
+            ),
+            const SizedBox(height: 20),
+            Center(child: MenuPhoto(imageBase64: _imageBase64, size: 150)),
+            const SizedBox(height: 8),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _picking ? null : _pickPhoto,
+                  icon: _picking
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_photo_alternate_outlined),
+                  label: Text(
+                    _picking
+                        ? 'Đang tải ảnh...'
+                        : _imageBase64 == null
+                        ? 'Chọn ảnh món'
+                        : 'Đổi ảnh',
+                  ),
+                ),
+                if (_imageBase64 != null)
+                  TextButton.icon(
+                    onPressed: _picking
+                        ? null
+                        : () => setState(() => _imageBase64 = null),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Xóa ảnh'),
+                  ),
+              ],
+            ),
+            const Text(
+              'Ảnh món (tùy chọn) • Tối đa 2 MB',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black54),
             ),
             const SizedBox(height: 20),
             TextFormField(
@@ -145,7 +234,7 @@ class _MenuEditorState extends State<MenuEditor> {
             ),
             const SizedBox(height: 12),
             FilledButton(
-              onPressed: _submit,
+              onPressed: _picking ? null : _submit,
               child: const Padding(
                 padding: EdgeInsets.all(12),
                 child: Text('Lưu món'),

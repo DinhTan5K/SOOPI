@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'merchant_data.dart';
 import 'menu_editor.dart';
+import 'merchant_orders.dart';
+import 'menu_photo.dart';
 
 class MerchantScreen extends StatefulWidget {
   const MerchantScreen({super.key});
@@ -233,7 +235,16 @@ class _MerchantScreenState extends State<MerchantScreen> {
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 760),
-                        child: _tab == 0 ? _shop() : _menu(),
+                        child: IndexedStack(
+                          index: _tab,
+                          children: [
+                            _shop(),
+                            _menu(),
+                            MerchantOrders(
+                              acceptingOrders: _data.acceptingOrders,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -254,6 +265,11 @@ class _MerchantScreenState extends State<MerchantScreen> {
           NavigationDestination(
             icon: Icon(Icons.restaurant_menu),
             label: 'Thực đơn',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Đơn hàng',
           ),
         ],
       ),
@@ -488,20 +504,23 @@ class _MerchantScreenState extends State<MerchantScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFEAD4),
-                          borderRadius: BorderRadius.circular(14),
+                      if (item.imageBase64 != null)
+                        MenuPhoto(imageBase64: item.imageBase64, size: 52)
+                      else
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFEAD4),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            item.category == 'Đồ uống'
+                                ? Icons.local_cafe_outlined
+                                : Icons.lunch_dining,
+                            color: Colors.deepOrange,
+                          ),
                         ),
-                        child: Icon(
-                          item.category == 'Đồ uống'
-                              ? Icons.local_cafe_outlined
-                              : Icons.lunch_dining,
-                          color: Colors.deepOrange,
-                        ),
-                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(

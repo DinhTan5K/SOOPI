@@ -40,6 +40,7 @@ class MenuItem {
     this.category = 'Món chính',
     this.description = '',
     this.available = true,
+    this.imageBase64,
   });
   final String id;
   final String name;
@@ -47,6 +48,7 @@ class MenuItem {
   final String category;
   final String description;
   final bool available;
+  final String? imageBase64;
   MenuItem withAvailability(bool value) => MenuItem(
     id: id,
     name: name,
@@ -54,6 +56,7 @@ class MenuItem {
     category: category,
     description: description,
     available: value,
+    imageBase64: imageBase64,
   );
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -62,6 +65,7 @@ class MenuItem {
     'category': category,
     'description': description,
     'available': available,
+    'imageBase64': imageBase64,
   };
   factory MenuItem.fromJson(Map<String, dynamic> json) => MenuItem(
     id: json['id'] as String,
@@ -70,6 +74,7 @@ class MenuItem {
     category: json['category'] as String,
     description: json['description'] as String,
     available: json['available'] as bool,
+    imageBase64: json['imageBase64'] as String?,
   );
 }
 

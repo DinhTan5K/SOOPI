@@ -39,6 +39,7 @@ void main() {
             name: 'Món đã lưu',
             price: 50000,
             available: false,
+            imageBase64: 'aW1hZ2U=',
           ),
         ],
       );
@@ -50,6 +51,11 @@ void main() {
       expect(restored.hours.last.enabled, isFalse);
       expect(restored.items.single.name, 'Món đã lưu');
       expect(restored.items.single.available, isFalse);
+      expect(restored.items.single.imageBase64, 'aW1hZ2U=');
+      expect(
+        restored.items.single.withAvailability(true).imageBase64,
+        'aW1hZ2U=',
+      );
     },
   );
 
