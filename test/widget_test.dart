@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core_platform_interface/test.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soopi/main.dart';
@@ -8,6 +10,10 @@ import 'package:soopi/merchant/merchant_data.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setupFirebaseCoreMocks();
+  setUpAll(() async {
+    await Firebase.initializeApp();
+  });
   const storage = MethodChannel('soopi/merchant_storage');
   String? saved;
   setUp(() async {
@@ -94,6 +100,8 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const MyApp());
+    await tester.ensureVisible(find.text('Dành cho chủ quán'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Dành cho chủ quán'));
     await tester.pumpAndSettle();
     expect(find.byType(MerchantLoginScreen), findsOneWidget);
