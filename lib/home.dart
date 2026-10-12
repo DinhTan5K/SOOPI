@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'order/order_list_screen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,22 +15,24 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(),
-              _buildTitle(),
-              _buildSearchBar(),
-              _buildBanner(),
-              _buildCategories(),
-              _buildPopularItems(),
-              const SizedBox(height: 40), // Space for bottom nav padding
-            ],
-          ),
-        ),
-      ),
+      body: _selectedIndex == 1
+          ? const SafeArea(child: OrderListScreen())
+          : SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(),
+                    _buildTitle(),
+                    _buildSearchBar(),
+                    _buildBanner(),
+                    _buildCategories(),
+                    _buildPopularItems(),
+                    const SizedBox(height: 40), // Space for bottom nav padding
+                  ],
+                ),
+              ),
+            ),
       bottomNavigationBar: _buildBottomNavigationBar(),
       floatingActionButton: FloatingActionButton(
         onPressed: () {},
