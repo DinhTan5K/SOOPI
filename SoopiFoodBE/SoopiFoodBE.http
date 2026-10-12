@@ -1,0 +1,9 @@
+@SoopiFoodBE_HostAddress = http://localhost:5194
+
+### Search for restaurants
+GET {{SoopiFoodBE_HostAddress}}/api/restaurants
+Accept: application/json
+
+### Get a restaurant menu
+GET {{SoopiFoodBE_HostAddress}}/api/restaurants/1/menu
+Accept: application/json
