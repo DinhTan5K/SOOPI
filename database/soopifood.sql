@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS "Restaurants" (
     "Longitude" numeric(10,7),
     "AverageRating" numeric(3,2) NOT NULL DEFAULT 0
         CHECK ("AverageRating" BETWEEN 0 AND 5),
+    "ReviewCount" integer NOT NULL DEFAULT 0,
+    "TotalOrders" integer NOT NULL DEFAULT 0,
     "IsActive" boolean NOT NULL DEFAULT true,
     "IsAcceptingOrders" boolean NOT NULL DEFAULT true
 );
@@ -85,7 +87,11 @@ CREATE TABLE IF NOT EXISTS "MenuItems" (
     "Name" varchar(200) NOT NULL,
     "Description" varchar(1000) NOT NULL DEFAULT '',
     "Price" numeric(12,2) NOT NULL CHECK ("Price" >= 0),
+    "OriginalPrice" numeric(12,2),
+    "DiscountPercent" integer DEFAULT 0,
     "ImageUrl" varchar(1000),
+    "SoldCount" integer NOT NULL DEFAULT 0,
+    "LikesCount" integer NOT NULL DEFAULT 0,
     "IsAvailable" boolean NOT NULL DEFAULT true
 );
 

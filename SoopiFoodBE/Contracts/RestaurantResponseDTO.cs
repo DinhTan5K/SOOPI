@@ -12,6 +12,8 @@ public sealed record RestaurantResponse(
     decimal? Latitude,
     decimal? Longitude,
     decimal AverageRating,
+    int ReviewCount,
+    int TotalOrders,
     bool IsActive,
     bool IsAcceptingOrders,
     List<MenuCategoryResponse> Categories,

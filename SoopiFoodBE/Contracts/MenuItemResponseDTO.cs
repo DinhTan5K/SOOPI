@@ -6,5 +6,9 @@ public sealed record MenuItemResponse(
     string Name,
     string Description,
     decimal Price,
+    decimal? OriginalPrice,
+    int? DiscountPercent,
+    int SoldCount,
+    int LikesCount,
     string? ImageUrl,
     bool IsAvailable);

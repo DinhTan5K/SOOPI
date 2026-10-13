@@ -11,6 +11,10 @@ public static class MappingExtensions
             item.Name,
             item.Description,
             item.Price,
+            item.OriginalPrice,
+            item.DiscountPercent,
+            item.SoldCount,
+            item.LikesCount,
             item.ImageUrl,
             item.IsAvailable);
 
@@ -44,6 +48,8 @@ public static class MappingExtensions
             r.Latitude,
             r.Longitude,
             r.AverageRating,
+            r.ReviewCount,
+            r.TotalOrders,
             r.IsActive,
             r.IsAcceptingOrders,
             r.Categories?.Select(c => c.ToResponse()).ToList() ?? [],

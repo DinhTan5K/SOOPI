@@ -14,6 +14,8 @@ public sealed class Restaurant : IEntity
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
     public decimal AverageRating { get; set; }
+    public int ReviewCount { get; set; }
+    public int TotalOrders { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsAcceptingOrders { get; set; } = true;
     public ICollection<MenuCategory> Categories { get; set; } = [];
