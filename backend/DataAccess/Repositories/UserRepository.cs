@@ -19,6 +19,12 @@ namespace Soopi.Backend.DataAccess.Repositories
                 .FirstOrDefaultAsync(u => u.FirebaseUid == firebaseUid);
         }
 
+        public async Task<User?> GetByEmailAsync(string email)
+        {
+            return await _context.Users
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
+        }
+
         public async Task<User> CreateAsync(User user)
         {
             user.CreatedAt = DateTime.UtcNow;

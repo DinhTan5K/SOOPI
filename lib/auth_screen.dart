@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'home.dart';
 import 'services/auth_service.dart';
+import 'services/auth_api_service.dart';
 import 'services/profile_api_service.dart';
+import 'widgets/otp_verification_dialog.dart';
 import 'merchant/merchant_login_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -25,8 +27,9 @@ class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
   
-  // Khởi tạo AuthService
+  // Khởi tạo AuthService và AuthApiService
   final AuthService _authService = AuthService();
+  final AuthApiService _authApiService = AuthApiService();
 
   @override
   void dispose() {
@@ -61,7 +64,66 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       if (_isLogin) {
         await _authService.signInWithEmailPassword(email, password);
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+          );
+        }
       } else {
+        // 1. Gửi mã xác thực OTP qua Email chống spam
+        final otpSendResult = await _authApiService.sendRegistrationOtp(email);
+        
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+
+        if (!otpSendResult.success) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(otpSendResult.message),
+                backgroundColor: Colors.red.shade700,
+              ),
+            );
+          }
+          return;
+        }
+
+        if (!mounted) return;
+
+        // 2. Mở hộp thoại nhập mã OTP 6 số
+        final isVerified = await OtpVerificationDialog.show(
+          context,
+          email: email,
+          initialCooldown: otpSendResult.cooldownSeconds ?? 60,
+          initialDevOtp: otpSendResult.devOtp,
+          onVerify: (otp) async {
+            final verifyResult = await _authApiService.verifyRegistrationOtp(email, otp);
+            if (!verifyResult.success) {
+              throw Exception(verifyResult.message);
+            }
+            return true;
+          },
+          onResend: () async {
+            return await _authApiService.sendRegistrationOtp(email);
+          },
+        );
+
+        if (isVerified != true) {
+          // Người dùng đã hủy hoặc đóng hộp thoại xác thực OTP
+          return;
+        }
+
+        // 3. Đã xác thực OTP thành công -> Tiến hành tạo tài khoản
+        if (mounted) {
+          setState(() {
+            _isLoading = true;
+          });
+        }
+
         final cred = await _authService.signUpWithEmailPassword(email, password);
         if (fullName.isNotEmpty) {
           await cred.user?.updateDisplayName(fullName);
@@ -70,13 +132,20 @@ class _AuthScreenState extends State<AuthScreen> {
         try {
           await ProfileApiService().getProfile();
         } catch (_) {}
-      }
 
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Xác thực thành công! Chào mừng bạn đến với SOOPI FOOD.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+          );
+        }
       }
     } on FirebaseAuthException catch (e) {
       String message = 'Đã có lỗi xảy ra. Vui lòng thử lại sau.';

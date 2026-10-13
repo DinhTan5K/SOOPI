@@ -16,10 +16,15 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 
+// Memory Cache (phục vụ lưu mã OTP & Rate limiting chống spam)
+builder.Services.AddMemoryCache();
+
 // Dependency Injection (DataAccess DAO & Services)
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IUserAddressRepository, UserAddressRepository>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IOtpService, OtpService>();
 
 // Firebase Authentication (JWT Bearer)
 var firebaseProjectId = builder.Configuration["Firebase:ProjectId"] ?? "soopi-food";

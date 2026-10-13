@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Soopi.Backend")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b81987aa5f854101d17efdad80c124afe6d6d84c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+99d94d27922471687261f8368b765c26dfeab651")]
 [assembly: System.Reflection.AssemblyProductAttribute("Soopi.Backend")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Soopi.Backend")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
