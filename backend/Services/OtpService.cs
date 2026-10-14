@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
-using Soopi.Backend.DataAccess.Repositories;
+using SoopiFoodBE.DataAccess.Repositories;
 
 namespace Soopi.Backend.Services
 {
@@ -63,7 +63,7 @@ namespace Soopi.Backend.Services
             // 2. Chống spam đăng ký đè: Kiểm tra xem email đã tồn tại trong hệ thống chưa
             try
             {
-                var existingUser = await _userRepository.GetByEmailAsync(normalizedEmail);
+                var existingUser = await _userRepository.FindByEmailAsync(normalizedEmail);
                 if (existingUser != null)
                 {
                     return (false, "Email này đã được sử dụng. Vui lòng đăng nhập hoặc chọn Quên mật khẩu.", null, null, null);

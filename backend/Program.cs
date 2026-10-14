@@ -2,27 +2,43 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using Soopi.Backend.DataAccess;
-using Soopi.Backend.DataAccess.Repositories;
+using SoopiFoodBE.DataAccess;
+using SoopiFoodBE.DataAccess.Dao;
+using SoopiFoodBE.DataAccess.Repositories;
+using SoopiFoodBE.Services;
 using Soopi.Backend.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddControllers();
+// Controllers & JSON configuration (tránh lỗi circular reference)
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    });
 
-// Database (PostgreSQL)
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString));
-
-// Memory Cache (phục vụ lưu mã OTP & Rate limiting chống spam)
+// Memory Cache (lưu OTP và Rate Limiting chống spam)
 builder.Services.AddMemoryCache();
 
-// Dependency Injection (DataAccess DAO & Services)
+// Database (PostgreSQL - SoopiDbContext)
+var connectionString = builder.Configuration.GetConnectionString("SoopiFood")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "Host=localhost;Port=5432;Database=soopi;Username=postgres;Password=12345";
+
+builder.Services.AddDbContext<SoopiDbContext>(options =>
+    options.UseNpgsql(connectionString));
+
+// Dependency Injection (DataAccess DAO, Repositories & Services)
+builder.Services.AddScoped(typeof(IEntityDao<>), typeof(EfEntityDao<>));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IUserAddressRepository, UserAddressRepository>();
+builder.Services.AddScoped<IRestaurantRepository, RestaurantRepository>();
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IUserProfileService, UserProfileService>();
+builder.Services.AddScoped<IRestaurantService, RestaurantService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 
@@ -61,7 +77,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "SOOPI FOOD API",
         Version = "v1",
-        Description = "Backend API cho ứng dụng SOOPI FOOD (.NET 8 + PostgreSQL + Firebase Auth)"
+        Description = "Backend API cho ứng dụng SOOPI FOOD (.NET 9 + PostgreSQL + Firebase Auth + Cloudinary)"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -91,22 +107,22 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// Tự động kiểm tra và tạo bảng trong PostgreSQL nếu chưa có
+// Khởi tạo Database nếu chưa có
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<SoopiDbContext>();
     try
     {
-        dbContext.Database.Migrate();
-        app.Logger.LogInformation("Database PostgreSQL đã tự động cập nhật migration thành công.");
+        dbContext.Database.EnsureCreated();
+        app.Logger.LogInformation("Database PostgreSQL đã sẵn sàng.");
     }
     catch (Exception ex)
     {
-        app.Logger.LogWarning("Chưa kết nối được PostgreSQL khi khởi động (Migrate): {Message}", ex.Message);
+        app.Logger.LogWarning("Chưa kết nối được PostgreSQL khi khởi động: {Message}", ex.Message);
     }
 }
 
-// Configure the HTTP request pipeline.
+// HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -117,10 +133,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("AllowAll");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();
