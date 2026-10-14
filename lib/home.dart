@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'profile/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,8 +13,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
+    Widget currentBody;
+    if (_selectedIndex == 3) {
+      currentBody = const ProfileScreen();
+    } else if (_selectedIndex == 1) {
+      currentBody = _buildSimplePlaceholder('Đơn hàng của bạn', Icons.receipt_long);
+    } else if (_selectedIndex == 2) {
+      currentBody = _buildSimplePlaceholder('Món ăn yêu thích', Icons.favorite);
+    } else {
+      currentBody = SafeArea(
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -28,7 +36,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-      ),
+      );
+    }
+
+    return Scaffold(
+      body: currentBody,
       bottomNavigationBar: _buildBottomNavigationBar(),
       floatingActionButton: FloatingActionButton(
         onPressed: () {},
@@ -65,15 +77,42 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          CircleAvatar(
-            backgroundColor: Colors.orange.shade200,
-            radius: 22,
-            child: const CircleAvatar(
-              radius: 20,
-              backgroundImage: NetworkImage('https://ui-avatars.com/api/?name=User&background=random'),
+          InkWell(
+            onTap: () => setState(() => _selectedIndex = 3),
+            borderRadius: BorderRadius.circular(22),
+            child: CircleAvatar(
+              backgroundColor: Colors.orange.shade200,
+              radius: 22,
+              child: const CircleAvatar(
+                radius: 20,
+                backgroundImage: NetworkImage('https://ui-avatars.com/api/?name=User&background=random'),
+              ),
             ),
           )
         ],
+      ),
+    );
+  }
+
+  Widget _buildSimplePlaceholder(String title, IconData icon) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 64, color: Colors.orange.shade300),
+            const SizedBox(height: 16),
+            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text('Tính năng đang được phát triển', style: TextStyle(color: Colors.grey.shade500)),
+          ],
+        ),
       ),
     );
   }

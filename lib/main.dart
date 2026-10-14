@@ -28,7 +28,6 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: Colors.white,
       ),
-      // Mặc định mở app lên sẽ vào thẳng màn hình Đăng nhập
       home: const AuthScreen(),
     );
   }
