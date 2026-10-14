@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../services/profile_api_service.dart';
 import '../services/auth_service.dart';
@@ -18,16 +17,21 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _apiService = ProfileApiService();
   UserProfile? _profile;
-  bool _isLoading = true;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadProfile();
+    // Hiển thị ngay lập tức từ cache hoặc thông tin Firebase để người dùng không phải chờ
+    _profile = _apiService.cachedProfile ?? _apiService.getInitialProfile();
+    // Tải dữ liệu mới nhất ngầm từ backend
+    _loadProfile(silent: true);
   }
 
-  Future<void> _loadProfile() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadProfile({bool silent = false}) async {
+    if (!silent && _profile == null) {
+      setState(() => _isLoading = true);
+    }
     try {
       final p = await _apiService.getProfile();
       if (mounted) {
@@ -37,62 +41,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && !silent) setState(() => _isLoading = false);
     }
-  }
-
-  void _showBackendConfigDialog() {
-    final controller = TextEditingController(text: _apiService.baseUrl);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.dns, color: Colors.orange),
-            SizedBox(width: 8),
-            Text('Cấu hình Backend API', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Địa chỉ API máy chủ .NET 8 (C#):',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'http://10.0.2.2:5000/api',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '• Giả lập Android: http://10.0.2.2:5000/api\n• Máy thật: http://<IP_May_Tinh>:5000/api\n• Trạng thái hiện tại: ${_apiService.isConnectedToBackend ? "🟢 Đã kết nối .NET" : "🟡 Chế độ Demo / Offline"}',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _apiService.baseUrl = controller.text.trim();
-              });
-              Navigator.pop(ctx);
-              _loadProfile();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-            child: const Text('Lưu & Thử lại'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _handleSignOut() async {
@@ -113,6 +63,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (confirm == true) {
+      _apiService.clearCache();
       await AuthService().signOut();
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -125,20 +76,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_isLoading && _profile == null) {
       return const Scaffold(
         backgroundColor: Colors.white,
         body: Center(child: CircularProgressIndicator(color: Colors.orange)),
       );
     }
 
-    final profile = _profile ??
-        UserProfile(
-          id: '0',
-          firebaseUid: '',
-          fullName: 'Người dùng SOOPI',
-          email: FirebaseAuth.instance.currentUser?.email ?? 'user@soopi.vn',
-        );
+    final profile = _profile ?? _apiService.getInitialProfile();
 
     final avatarUrl = profile.avatarUrl.isNotEmpty
         ? profile.avatarUrl
@@ -151,13 +96,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0.5,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_ethernet, color: Colors.orange),
-            tooltip: 'Cài đặt Backend API',
-            onPressed: _showBackendConfigDialog,
-          ),
-        ],
       ),
       body: RefreshIndicator(
         color: Colors.orange,
@@ -179,7 +117,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.orange.withOpacity(0.3),
+                      color: Colors.orange.withValues(alpha: 0.3),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
                     ),
@@ -298,34 +236,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ]),
               const SizedBox(height: 20),
 
-              // Nhóm: Hệ thống & Kết nối
-              _buildSectionTitle('Kết nối & Hệ thống'),
+              // Nhóm: Cài đặt ứng dụng
+              _buildSectionTitle('Cài đặt ứng dụng'),
               _buildMenuCard([
-                _buildMenuItem(
-                  icon: Icons.dns_outlined,
-                  title: 'Máy chủ .NET 8 (C#)',
-                  subtitle: _apiService.baseUrl,
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _apiService.isConnectedToBackend ? Colors.green.shade50 : Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _apiService.isConnectedToBackend ? Colors.green.shade200 : Colors.amber.shade300,
-                      ),
-                    ),
-                    child: Text(
-                      _apiService.isConnectedToBackend ? 'Đã kết nối' : 'Offline / Demo',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: _apiService.isConnectedToBackend ? Colors.green : Colors.amber.shade900,
-                      ),
-                    ),
-                  ),
-                  onTap: _showBackendConfigDialog,
-                ),
-                _buildDivider(),
                 _buildMenuItem(
                   icon: Icons.notifications_none_outlined,
                   title: 'Cài đặt thông báo',
@@ -370,7 +283,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 30),
 
               Text(
-                'SOOPI FOOD v1.0.0 • Backend .NET 8 & PostgreSQL',
+                'SOOPI FOOD v1.0.0',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
               const SizedBox(height: 20),
@@ -402,7 +315,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.04),
+            color: Colors.grey.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

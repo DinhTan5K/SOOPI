@@ -15,10 +15,44 @@ class ProfileApiService {
   // IP máy tính chạy .NET 8 (cổng 5000)
   String baseUrl = 'http://192.168.2.154:5000/api';
 
+  static const List<String> candidateBaseUrls = [
+    'http://192.168.2.154:5000/api',
+    'http://127.0.0.1:5000/api',
+    'http://10.0.2.2:5000/api',
+    'http://localhost:5000/api',
+  ];
+
   // Bộ nhớ đệm tạm thời (In-memory Fallback) khi Backend .NET chưa chạy
   UserProfile? _localProfileCache;
   final List<UserAddress> _localAddressesCache = [];
   bool isConnectedToBackend = false;
+
+  UserProfile? get cachedProfile => _localProfileCache;
+
+  UserProfile getInitialProfile() {
+    if (_localProfileCache != null) return _localProfileCache!;
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid ?? 'guest_user';
+    final email = user?.email ?? 'user@soopi.vn';
+    final displayName = user?.displayName ?? 'Khách hàng SOOPI';
+    return UserProfile(
+      id: '1',
+      firebaseUid: uid,
+      fullName: displayName.isNotEmpty ? displayName : 'Khách hàng SOOPI',
+      email: email,
+      phoneNumber: user?.phoneNumber ?? '',
+      avatarUrl: user?.photoURL ?? '',
+      gender: 'Nam',
+      dateOfBirth: DateTime(2000, 1, 1),
+      createdAt: DateTime.now(),
+    );
+  }
+
+  void clearCache() {
+    _localProfileCache = null;
+    _localAddressesCache.clear();
+    isConnectedToBackend = false;
+  }
 
   /// Lấy Firebase ID Token để đính kèm vào Header Authorization
   Future<Map<String, String>> _getHeaders() async {
@@ -37,17 +71,12 @@ class ProfileApiService {
 
   /// Lấy thông tin Profile người dùng
   Future<UserProfile> getProfile() async {
-    final user = FirebaseAuth.instance.currentUser;
-    final uid = user?.uid ?? 'guest_user';
-    final email = user?.email ?? 'user@soopi.vn';
-    final displayName = user?.displayName ?? 'Khách hàng SOOPI';
-
     try {
       final headers = await _getHeaders();
 
       final response = await http
           .get(Uri.parse('$baseUrl/user/profile'), headers: headers)
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(milliseconds: 2500));
 
       if (response.statusCode == 200) {
         isConnectedToBackend = true;
@@ -55,23 +84,29 @@ class ProfileApiService {
         _localProfileCache = UserProfile.fromJson(data);
         return _localProfileCache!;
       }
-    } catch (e) {
-      debugPrint('[ProfileApiService] Không kết nối được .NET Backend ($baseUrl): $e');
+    } catch (_) {
+      // Thử failover qua các candidate URL khác
+      for (final candidate in candidateBaseUrls) {
+        if (candidate == baseUrl) continue;
+        try {
+          final headers = await _getHeaders();
+          final response = await http
+              .get(Uri.parse('$candidate/user/profile'), headers: headers)
+              .timeout(const Duration(milliseconds: 1500));
+          if (response.statusCode == 200) {
+            baseUrl = candidate;
+            isConnectedToBackend = true;
+            final data = jsonDecode(response.body);
+            _localProfileCache = UserProfile.fromJson(data);
+            return _localProfileCache!;
+          }
+        } catch (_) {}
+      }
       isConnectedToBackend = false;
     }
 
     // Fallback: Sử dụng dữ liệu Firebase hoặc cache hiện tại
-    _localProfileCache ??= UserProfile(
-      id: '1',
-      firebaseUid: uid,
-      fullName: displayName.isNotEmpty ? displayName : 'Nguyễn Văn A',
-      email: email,
-      phoneNumber: user?.phoneNumber ?? '0987654321',
-      avatarUrl: user?.photoURL ?? 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(displayName)}&background=FFA500&color=fff',
-      gender: 'Nam',
-      dateOfBirth: DateTime(2000, 1, 1),
-      createdAt: DateTime.now(),
-    );
+    _localProfileCache ??= getInitialProfile();
     return _localProfileCache!;
   }
 

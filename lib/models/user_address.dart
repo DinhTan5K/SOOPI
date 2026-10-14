@@ -1,7 +1,7 @@
 class UserAddress {
   final String id;
   final String firebaseUid;
-  final String label; // 'Nhà riêng', 'Văn phòng', 'Khác'
+  final String label;
   final String recipientName;
   final String phoneNumber;
   final String fullAddress;

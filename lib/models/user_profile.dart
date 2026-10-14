@@ -5,7 +5,7 @@ class UserProfile {
   final String email;
   final String phoneNumber;
   final String avatarUrl;
-  final String gender; // 'Nam', 'Nữ', 'Khác'
+  final String gender;
   final DateTime? dateOfBirth;
   final DateTime? createdAt;
   final DateTime? updatedAt;

@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS users (
     gender VARCHAR(20) DEFAULT 'Nam',
     date_of_birth TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ
+    updated_at TIMESTAMPTZ,
+    role VARCHAR(20) NOT NULL DEFAULT 'Customer',
+    is_locked BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE INDEX IF NOT EXISTS "IX_users_firebase_uid" ON users (firebase_uid);
