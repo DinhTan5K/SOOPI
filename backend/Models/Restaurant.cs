@@ -2,6 +2,11 @@ namespace SoopiFoodBE.Models;
 
 public sealed class Restaurant : IEntity
 {
+    public string ApprovalStatus { get; set; } = "Pending";
+    public bool IsLocked { get; set; }
+    public string? ReviewReason { get; set; }
+    public Guid? ReviewedBy { get; set; }
+    public DateTimeOffset? ReviewedAt { get; set; }
     public Guid Id { get; set; }
     public Guid? OwnerId { get; set; }
     public AppUser? Owner { get; set; }
@@ -17,7 +22,7 @@ public sealed class Restaurant : IEntity
     public int ReviewCount { get; set; }
     public int TotalOrders { get; set; }
     public bool IsActive { get; set; } = true;
-    public bool IsAcceptingOrders { get; set; } = true;
+    public bool IsAcceptingOrders { get; set; }
     public ICollection<MenuCategory> Categories { get; set; } = [];
     public ICollection<OpeningHour> OpeningHours { get; set; } = [];
 }

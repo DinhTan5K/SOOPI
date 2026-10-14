@@ -2,6 +2,7 @@ namespace SoopiFoodBE.Models;
 
 public sealed class MenuItem : IEntity
 {
+    public bool IsDeleted { get; set; }
     public Guid Id { get; set; }
     public Guid CategoryId { get; set; }
     public MenuCategory? Category { get; set; }

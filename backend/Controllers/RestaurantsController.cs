@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using SoopiFoodBE.Contracts;
 using SoopiFoodBE.Services;
 
@@ -33,6 +34,7 @@ public sealed class RestaurantsController(
         Ok(await service.Menu(id, ct));
 
     [HttpPut("{id:guid}/owner/{ownerId:guid}")]
+    [Authorize, ManagementAccess]
     public async Task<IActionResult> Update(
         Guid id,
         Guid ownerId,
@@ -45,6 +47,7 @@ public sealed class RestaurantsController(
     }
 
     [HttpPut("{id:guid}/owner/{ownerId:guid}/hours/{day:int}")]
+    [Authorize, ManagementAccess]
     public async Task<IActionResult> Hours(
         Guid id,
         Guid ownerId,
@@ -65,6 +68,7 @@ public sealed class RestaurantsController(
     }
 
     [HttpPost("owner/{ownerId:guid}/menu")]
+    [Authorize, ManagementAccess]
     public async Task<IActionResult> AddMenu(
         Guid ownerId,
         MenuItemRequest input,
@@ -81,6 +85,7 @@ public sealed class RestaurantsController(
     }
 
     [HttpPut("owner/{ownerId:guid}/menu/{itemId:guid}")]
+    [Authorize, ManagementAccess]
     public async Task<IActionResult> UpdateMenu(
         Guid ownerId,
         Guid itemId,
@@ -98,6 +103,7 @@ public sealed class RestaurantsController(
     }
 
     [HttpDelete("owner/{ownerId:guid}/menu/{itemId:guid}")]
+    [Authorize, ManagementAccess]
     public async Task<IActionResult> DeleteMenu(
         Guid ownerId,
         Guid itemId,
@@ -110,7 +116,7 @@ public sealed class RestaurantsController(
 
     [HttpGet("favorites/{userId:guid}")]
     public async Task<IActionResult> Favorites(Guid userId, CancellationToken ct) =>
-        Ok(await reviews.Favorites(userId, ct));
+        Ok((await reviews.Favorites(userId, ct)).Select(r => r.ToResponse()));
 
     [HttpPut("favorites/{userId:guid}/{restaurantId:guid}")]
     public async Task<IActionResult> Favorite(

@@ -16,7 +16,7 @@ public interface IUserService
     Task<bool> SetLock(Guid id, bool locked, CancellationToken ct);
 }
 
-public sealed class UserService(SoopiDbContext db, IUserRepository users) : IUserService
+public sealed class UserService(SoopiDbContext db, IUserRepository users, CurrentAccount accounts) : IUserService
 {
     public Task<AppUser?> Profile(Guid id, CancellationToken ct) => users.FindAsync(id, ct);
 
@@ -99,11 +99,15 @@ public sealed class UserService(SoopiDbContext db, IUserRepository users) : IUse
 
     public async Task<bool> SetLock(Guid id, bool locked, CancellationToken ct)
     {
+        var actor = await accounts.Admin(ct);
         var user = await db.Users.FindAsync([id], ct);
         if (user is null)
             return false;
 
-        user.IsLocked = locked;
+        if (user.Id == actor.Id || user.Role == "Admin") throw new ManagementException(403, "Administrator accounts cannot be locked here.");
+        if (locked) throw new ManagementException(400, "Use PATCH /api/admin/users/{id}/lock with a reason to lock an account.");
+        user.IsLocked = false;
+        db.ManagementAudits.Add(new SoopiFoodBE.Models.ManagementAudit { ActorId = actor.Id, TargetId = id, TargetType = "User", Action = "Unlocked" });
         await db.SaveChangesAsync(ct);
         return true;
     }
