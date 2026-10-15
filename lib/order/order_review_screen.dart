@@ -86,18 +86,15 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. Đánh giá Nhà hàng / Món ăn
             _buildRestaurantSection(),
 
             const SizedBox(height: 20),
 
-            // 2. Đánh giá Tài xế (Shipper)
             if (widget.order.shipper != null) ...[
               _buildShipperSection(),
               const SizedBox(height: 24),
             ],
 
-            // 3. Nút Gửi đánh giá
             ElevatedButton(
               onPressed: _submitReview,
               style: ElevatedButton.styleFrom(
@@ -166,7 +163,6 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          // Sao đánh giá quán
           Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,

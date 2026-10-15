@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'order_list_screen.dart';
 
-/// File chạy độc lập dành riêng để test/demo UC06, UC07, UC08
-/// Chạy lệnh: flutter run -t lib/order/order_main.dart
 void main() {
   runApp(const OrderApp());
 }

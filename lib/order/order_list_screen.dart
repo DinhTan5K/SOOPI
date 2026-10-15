@@ -36,7 +36,6 @@ class _OrderListScreenState extends State<OrderListScreen>
         duration: const Duration(seconds: 2),
       ),
     );
-    // Tự động chuyển về tab "Đang đến" để người dùng thấy ngay đơn mới
     _tabController.animateTo(0);
   }
 
@@ -196,7 +195,6 @@ class _OrderListScreenState extends State<OrderListScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header quán
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -252,7 +250,6 @@ class _OrderListScreenState extends State<OrderListScreen>
 
           const Divider(height: 1),
 
-          // Tóm tắt món
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -289,7 +286,6 @@ class _OrderListScreenState extends State<OrderListScreen>
 
           const Divider(height: 1),
 
-          // Nút bấm tác vụ
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: _buildCardActions(order),
@@ -300,7 +296,6 @@ class _OrderListScreenState extends State<OrderListScreen>
   }
 
   Widget _buildCardActions(OrderModel order) {
-    // Đơn đang chạy
     if (order.isActive) {
       return SizedBox(
         width: double.infinity,
@@ -312,7 +307,7 @@ class _OrderListScreenState extends State<OrderListScreen>
             );
           },
           icon: const Icon(Icons.two_wheeler, size: 20),
-          label: const Text('Theo dõi đơn hàng (UC06)', style: TextStyle(fontWeight: FontWeight.bold)),
+          label: const Text('Theo dõi đơn hàng ', style: TextStyle(fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange,
             foregroundColor: Colors.white,
@@ -324,15 +319,13 @@ class _OrderListScreenState extends State<OrderListScreen>
       );
     }
 
-    // Đơn đã xong hoặc hủy
     return Row(
       children: [
-        // Nút mua lại (UC07)
         Expanded(
           child: OutlinedButton.icon(
             onPressed: () => _onReorder(order),
             icon: const Icon(Icons.replay, size: 18),
-            label: const Text('Mua lại (UC07)', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: const Text('Mua lại', style: TextStyle(fontWeight: FontWeight.bold)),
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.orange,
               side: const BorderSide(color: Colors.orange),
@@ -342,7 +335,6 @@ class _OrderListScreenState extends State<OrderListScreen>
           ),
         ),
 
-        // Nút đánh giá (UC08) nếu hoàn thành
         if (order.status == OrderStatus.completed) ...[
           const SizedBox(width: 10),
           Expanded(
@@ -373,7 +365,7 @@ class _OrderListScreenState extends State<OrderListScreen>
                       );
                     },
                     icon: const Icon(Icons.star_border, size: 18),
-                    label: const Text('Đánh giá (UC08)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('Đánh giá', style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.amber.shade700,
                       foregroundColor: Colors.white,

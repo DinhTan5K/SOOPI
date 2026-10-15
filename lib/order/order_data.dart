@@ -1,15 +1,11 @@
 import 'package:flutter/foundation.dart';
 
-// -------------------------------------------------------------
-// 1. CÁC ENUM VÀ MODEL DỮ LIỆU CỦA ĐƠN HÀNG
-// -------------------------------------------------------------
-
 enum OrderStatus {
-  pending, // Chờ xác nhận
-  preparing, // Quán đang làm
-  delivering, // Tài xế đang giao
-  completed, // Đã hoàn thành
-  cancelled, // Đã hủy
+  pending,
+  preparing,
+  delivering,
+  completed,
+  cancelled,
 }
 
 extension OrderStatusExtension on OrderStatus {
@@ -99,10 +95,10 @@ class ShipperInfo {
 }
 
 class ReviewModel {
-  final int restaurantRating; // 1 - 5 sao
+  final int restaurantRating;
   final List<String> restaurantTags;
   final String restaurantComment;
-  final int shipperRating; // 1 - 5 sao
+  final int shipperRating;
   final List<String> shipperTags;
   final String shipperComment;
   final int tipAmount;
@@ -165,10 +161,6 @@ class OrderModel {
 String money(int value) =>
     '${value.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]}.')} đ';
 
-// -------------------------------------------------------------
-// 2. CLASS QUẢN LÝ DỮ LIỆU ĐƠN HÀNG (STATE & STORAGE)
-// -------------------------------------------------------------
-
 class OrderData extends ChangeNotifier {
   static final OrderData _instance = OrderData._internal();
   factory OrderData() => _instance;
@@ -192,7 +184,6 @@ class OrderData extends ChangeNotifier {
   }
 
   void _initSampleData() {
-    // 1. Đơn đang giao (Để test UC06: Theo dõi đơn hàng thời gian thực + Bản đồ)
     _orders.add(
       OrderModel(
         id: 'SP-8839',
@@ -242,7 +233,6 @@ class OrderData extends ChangeNotifier {
       ),
     );
 
-    // 2. Đơn hoàn thành chưa đánh giá (Để test UC07 Lịch sử đơn + UC08 Đánh giá ngay)
     _orders.add(
       OrderModel(
         id: 'SP-7512',
@@ -281,7 +271,6 @@ class OrderData extends ChangeNotifier {
       ),
     );
 
-    // 3. Đơn hoàn thành đã đánh giá (Để test UC07 Mua lại đơn cũ + Xem lại đánh giá)
     _orders.add(
       OrderModel(
         id: 'SP-6201',
@@ -330,7 +319,6 @@ class OrderData extends ChangeNotifier {
       ),
     );
 
-    // 4. Đơn đã hủy
     _orders.add(
       OrderModel(
         id: 'SP-4820',
@@ -353,7 +341,6 @@ class OrderData extends ChangeNotifier {
     );
   }
 
-  /// UC06: Giả lập chuyển bước tiến trình thời gian thực
   void advanceOrderStatus(String orderId) {
     final order = findById(orderId);
     if (order == null) return;
@@ -371,7 +358,6 @@ class OrderData extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// UC07: Mua lại đơn cũ (Re-order)
   OrderModel reorder(OrderModel oldOrder) {
     final newId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
     final newOrder = OrderModel(
@@ -408,7 +394,6 @@ class OrderData extends ChangeNotifier {
     return newOrder;
   }
 
-  /// UC08: Gửi đánh giá cho Nhà hàng & Shipper
   void submitReview(String orderId, ReviewModel review) {
     final order = findById(orderId);
     if (order == null) return;

@@ -152,7 +152,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               ],
             ),
             actions: [
-              // Nút giả lập bước tiếp theo để demo nhanh
               IconButton(
                 tooltip: 'Giả lập bước tiếp theo',
                 onPressed: () {
@@ -173,12 +172,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 1. Bản đồ mô phỏng lộ trình & Shipper di chuyển
                 _buildMockMap(order),
 
                 const SizedBox(height: 16),
 
-                // Helper thanh thông báo demo
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
@@ -202,24 +199,20 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
 
                 const SizedBox(height: 16),
 
-                // 2. Thẻ thông tin Shipper
                 if (order.shipper != null) ...[
                   _buildShipperCard(order.shipper!),
                   const SizedBox(height: 16),
                 ],
 
-                // 3. Tiến trình 4 bước của đơn hàng
                 _buildStepper(order.status),
 
                 const SizedBox(height: 16),
 
-                // 4. Nếu đơn hoàn thành -> Nút đánh giá ngay (UC08)
                 if (order.status == OrderStatus.completed) ...[
                   _buildReviewPrompt(order),
                   const SizedBox(height: 16),
                 ],
 
-                // 5. Chi tiết hóa đơn
                 _buildOrderDetailsCard(order),
 
                 const SizedBox(height: 24),
@@ -246,7 +239,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
           Positioned.fill(
             child: CustomPaint(painter: _MapPainter()),
           ),
-          // Quán ăn
           Positioned(
             left: 24,
             top: 70,
@@ -257,7 +249,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               sublabel: 'Điểm lấy món',
             ),
           ),
-          // Khách hàng
           Positioned(
             right: 24,
             bottom: 40,
@@ -268,7 +259,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               sublabel: 'Điểm nhận hàng',
             ),
           ),
-          // Shipper
           if (order.status == OrderStatus.delivering)
             AnimatedBuilder(
               animation: _shipperProgress,
@@ -301,7 +291,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               top: 105,
               child: _buildShipperBadge(isWaiting: true),
             ),
-          // ETA badge
           Positioned(
             top: 12,
             right: 12,
@@ -683,7 +672,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             },
             icon: const Icon(Icons.star, color: Colors.orange),
             label: const Text(
-              'Đánh giá & Bình luận ngay (UC08)',
+              'Đánh giá & Bình luận ngay',
               style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
             ),
             style: ElevatedButton.styleFrom(
