@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SoopiFoodBE")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a2397d37bff5eeeada9ed071809a34d4f88a4957")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+eea1f0dff42218c757d742990b1ff6c969cc5d33")]
 [assembly: System.Reflection.AssemblyProductAttribute("SoopiFoodBE")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SoopiFoodBE")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
