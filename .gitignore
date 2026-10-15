@@ -51,5 +51,24 @@ app.*.map.json
 **/bin/
 **/obj/
 **/TestResults/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
 .env
+.env.*
+!.env.example
+!.env.sample
 backend/appsettings.Local.json
+
+# Backend runtime files, publish output, and machine-specific settings
+/backend/logs/
+/backend/publish/
+/backend/artifacts/
+/backend/coverage/
+/backend/*.db
+/backend/*.db-shm
+/backend/*.db-wal
+/backend/appsettings.*.Local.json
+/backend/Properties/PublishProfiles/*.pubxml.user

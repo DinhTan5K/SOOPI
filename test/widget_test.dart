@@ -84,7 +84,9 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const MaterialApp(home: MerchantScreen()));
+    await tester.pumpWidget(
+      MaterialApp(home: MerchantScreen(data: MerchantData())),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byType(Switch).at(1));
     await tester.pumpAndSettle();
@@ -107,26 +109,52 @@ void main() {
     expect(find.byType(MerchantLoginScreen), findsOneWidget);
   });
 
-  testWidgets('Merchant login rejects wrong credentials and accepts demo', (
+  testWidgets('Merchant login validates required credentials', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: MerchantLoginScreen()));
+    await tester.ensureVisible(find.byType(FilledButton));
+    await tester.tap(find.byType(FilledButton));
+    await tester.pumpAndSettle();
+    expect(find.byType(MerchantScreen), findsNothing);
+    expect(find.byType(TextFormField), findsNWidgets(2));
+    expect(
+      tester
+          .widget<TextFormField>(find.byType(TextFormField).first)
+          .controller!
+          .text,
+      isEmpty,
+    );
+  });
+
+  testWidgets('Merchant registration validates name and matching passwords', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const MaterialApp(home: MerchantLoginScreen()));
-    await tester.ensureVisible(find.text('Đăng nhập quản lý'));
-    await tester.tap(find.text('Đăng nhập quản lý'));
+    final toggle = find.text('Chưa có tài khoản? Đăng ký chủ quán');
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
     await tester.pumpAndSettle();
-    expect(find.text('Nhập email hợp lệ.'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField).at(0), 'owner@soopi.vn');
-    await tester.enterText(find.byType(TextFormField).at(1), 'wrong');
-    await tester.ensureVisible(find.text('Đăng nhập quản lý'));
-    await tester.tap(find.text('Đăng nhập quản lý'));
+    expect(find.byType(TextFormField), findsNWidgets(4));
+    await tester.enterText(
+      find.byType(TextFormField).at(1),
+      'owner@example.com',
+    );
+    await tester.enterText(find.byType(TextFormField).at(2), '123');
+    await tester.enterText(find.byType(TextFormField).at(3), 'different');
+    final submit = find.text('Đăng ký tài khoản chủ quán');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
     await tester.pumpAndSettle();
-    expect(find.text('Email hoặc mật khẩu không đúng.'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField).at(1), 'Soopi123!');
-    await tester.tap(find.text('Đăng nhập quản lý'));
+    expect(find.text('Nhập họ tên.'), findsOneWidget);
+    expect(find.text('Mật khẩu phải có ít nhất 6 ký tự.'), findsOneWidget);
+    expect(find.text('Mật khẩu nhập lại không khớp.'), findsOneWidget);
+    final login = find.text('Đã có tài khoản? Đăng nhập');
+    await tester.ensureVisible(login);
+    await tester.tap(login);
     await tester.pumpAndSettle();
-    expect(find.byType(MerchantScreen), findsOneWidget);
+    expect(find.byType(TextFormField), findsNWidgets(2));
+    expect(find.text('Nhập họ tên.'), findsNothing);
   });
 
   testWidgets('Menu supports validation, CRUD, stock and filtering', (
@@ -134,7 +162,9 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const MaterialApp(home: MerchantScreen()));
+    await tester.pumpWidget(
+      MaterialApp(home: MerchantScreen(data: MerchantData())),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Thực đơn'));
     await tester.pumpAndSettle();
@@ -208,7 +238,9 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const MaterialApp(home: MerchantScreen()));
+    await tester.pumpWidget(
+      MaterialApp(home: MerchantScreen(data: MerchantData())),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();

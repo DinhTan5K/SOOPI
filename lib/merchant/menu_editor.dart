@@ -9,7 +9,8 @@ import 'merchant_data.dart';
 import 'menu_photo.dart';
 
 class MenuEditor extends StatefulWidget {
-  const MenuEditor({super.key, this.item});
+  const MenuEditor({super.key, this.item, this.categories = foodCategories});
+  final List<String> categories;
   final MenuItem? item;
   @override
   State<MenuEditor> createState() => _MenuEditorState();
@@ -30,7 +31,7 @@ class _MenuEditorState extends State<MenuEditor> {
     _name = TextEditingController(text: widget.item?.name ?? '');
     _price = TextEditingController(text: widget.item?.price.toString() ?? '');
     _description = TextEditingController(text: widget.item?.description ?? '');
-    _category = widget.item?.category ?? foodCategories.first;
+    _category = widget.item?.category ?? widget.categories.first;
     _available = widget.item?.available ?? true;
     _imageBase64 = widget.item?.imageBase64;
   }
@@ -210,7 +211,7 @@ class _MenuEditorState extends State<MenuEditor> {
                 labelText: 'Danh mục',
                 border: OutlineInputBorder(),
               ),
-              items: foodCategories
+              items: widget.categories
                   .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                   .toList(),
               onChanged: (v) => setState(() => _category = v!),

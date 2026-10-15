@@ -12,14 +12,25 @@ class MenuPhoto extends StatelessWidget {
     Widget image = const Icon(Icons.lunch_dining, color: Colors.deepOrange);
     if (imageBase64 != null) {
       try {
-        image = Image.memory(
-          base64Decode(imageBase64!),
-          fit: BoxFit.cover,
-          width: size,
-          height: size,
-          errorBuilder: (_, error, stackTrace) =>
-              const Icon(Icons.broken_image_outlined, color: Colors.deepOrange),
-        );
+        image = imageBase64!.startsWith('http')
+            ? Image.network(
+                imageBase64!,
+                fit: BoxFit.cover,
+                width: size,
+                height: size,
+                errorBuilder: (_, error, stackTrace) =>
+                    const Icon(Icons.broken_image_outlined),
+              )
+            : Image.memory(
+                base64Decode(imageBase64!),
+                fit: BoxFit.cover,
+                width: size,
+                height: size,
+                errorBuilder: (_, error, stackTrace) => const Icon(
+                  Icons.broken_image_outlined,
+                  color: Colors.deepOrange,
+                ),
+              );
       } on FormatException {
         image = const Icon(
           Icons.broken_image_outlined,
