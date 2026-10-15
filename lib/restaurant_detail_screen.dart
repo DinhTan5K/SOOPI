@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
+import 'order/order_data.dart' as order_data;
+import 'order/order_tracking_screen.dart';
 
 class RestaurantDetailScreen extends StatefulWidget {
   final ApiRestaurant restaurant;
@@ -1000,14 +1002,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
             ],
           ),
           ElevatedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Chuyển tới thanh toán cho $count món (${_formatPrice(totalPrice)})'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
+            onPressed: () => _showCheckoutSheet(context, totalPrice, categories),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
@@ -1022,6 +1017,168 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showCheckoutSheet(BuildContext context, double subtotal, List<ApiMenuCategory> categories) {
+    final selectedOrderItems = <order_data.OrderItem>[];
+    for (final cat in categories) {
+      for (final item in cat.items) {
+        final qty = _cartItems[item.id] ?? 0;
+        if (qty > 0) {
+          selectedOrderItems.add(
+            order_data.OrderItem(
+              id: item.id,
+              name: item.name,
+              price: item.price.toInt(),
+              quantity: qty,
+              emoji: '🍲',
+            ),
+          );
+        }
+      }
+    }
+
+    if (selectedOrderItems.isEmpty) return;
+
+    const deliveryFee = 16000;
+    final total = subtotal.toInt() + deliveryFee;
+    const paymentMethod = 'Tiền mặt khi nhận hàng (COD)';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          left: 20,
+          right: 20,
+          top: 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Xác nhận đặt đơn hàng',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const Divider(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.storefront, color: Colors.orange),
+              ),
+              title: Text(widget.restaurant.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(widget.restaurant.address, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const Divider(),
+            const Text('Món đã chọn:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 140),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: selectedOrderItems.length,
+                itemBuilder: (_, i) {
+                  final it = selectedOrderItems[i];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Text('${it.quantity}x ', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                        Expanded(child: Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        Text(order_data.money(it.price * it.quantity), style: const TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const Divider(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Tiền món:', style: TextStyle(color: Colors.grey)),
+                Text(order_data.money(subtotal.toInt())),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Phí giao hàng:', style: TextStyle(color: Colors.grey)),
+                Text('16.000 đ'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Tổng thanh toán:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  order_data.money(total),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.red),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                final newOrder = order_data.OrderData().createOrder(
+                  restaurantName: widget.restaurant.name,
+                  restaurantAddress: widget.restaurant.address,
+                  items: selectedOrderItems,
+                  deliveryAddress: 'Địa chỉ nhận hàng của bạn',
+                  paymentMethod: paymentMethod,
+                  deliveryFee: deliveryFee,
+                );
+
+                setState(() {
+                  _cartItems.clear();
+                });
+
+                Navigator.pop(ctx);
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => OrderTrackingScreen(orderId: newOrder.id),
+                  ),
+                );
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('🎉 Đặt đơn #${newOrder.id} thành công! Quán đang nhận đơn.'),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.orange,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Xác nhận Đặt hàng', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
       ),
     );
   }

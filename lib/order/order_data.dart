@@ -353,6 +353,67 @@ class OrderData extends ChangeNotifier {
     );
   }
 
+  /// Đặt đơn hàng mới từ giỏ hàng quán ăn
+  OrderModel createOrder({
+    required String restaurantName,
+    required String restaurantAddress,
+    String restaurantEmoji = '🏪',
+    required List<OrderItem> items,
+    required String deliveryAddress,
+    String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
+    int deliveryFee = 16000,
+    int discount = 0,
+  }) {
+    final newId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
+    final newOrder = OrderModel(
+      id: newId,
+      restaurantName: restaurantName,
+      restaurantAddress: restaurantAddress,
+      restaurantEmoji: restaurantEmoji,
+      items: items,
+      deliveryFee: deliveryFee,
+      discount: discount,
+      paymentMethod: paymentMethod,
+      deliveryAddress: deliveryAddress,
+      status: OrderStatus.pending,
+      createdAt: DateTime.now(),
+      estimatedDeliveryMinutes: 25,
+      shipper: ShipperInfo(
+        name: 'Trần Văn Hải',
+        phone: '0981.234.567',
+        rating: 4.9,
+        bikePlate: '29-F1 999.22',
+        bikeType: 'Honda AirBlade (Đen xám)',
+      ),
+    );
+
+    _orders.insert(0, newOrder);
+    notifyListeners();
+
+    // Giả lập tiến trình thời gian thực:
+    // Sau 8 giây: Quán nhận đơn & bắt đầu làm
+    Future.delayed(const Duration(seconds: 8), () {
+      final current = findById(newId);
+      if (current != null && current.status == OrderStatus.pending) {
+        current.status = OrderStatus.preparing;
+        current.estimatedDeliveryMinutes = 18;
+        notifyListeners();
+      }
+    });
+
+    // Sau 25 giây: Tài xế lấy món và bắt đầu giao
+    Future.delayed(const Duration(seconds: 25), () {
+      final current = findById(newId);
+      if (current != null && current.status == OrderStatus.preparing) {
+        current.status = OrderStatus.delivering;
+        current.estimatedDeliveryMinutes = 12;
+        notifyListeners();
+      }
+    });
+
+    return newOrder;
+  }
+
   /// UC06: Giả lập chuyển bước tiến trình thời gian thực
   void advanceOrderStatus(String orderId) {
     final order = findById(orderId);

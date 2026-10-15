@@ -86,6 +86,7 @@ class _OrderListScreenState extends State<OrderListScreen>
 
         return Scaffold(
           appBar: AppBar(
+            automaticallyImplyLeading: false,
             title: const Text(
               'Đơn hàng của tôi',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),

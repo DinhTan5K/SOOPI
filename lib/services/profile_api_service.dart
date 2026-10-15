@@ -10,16 +10,18 @@ class ProfileApiService {
   factory ProfileApiService() => _instance;
   ProfileApiService._internal();
 
-  /// Default API URL: 10.0.2.2 for Android Emulator, localhost for Windows/Web
-  /// Có thể đổi thành IP LAN máy tính khi chạy trên điện thoại thật (vd: http://192.168.1.15:5000/api)
-  // IP máy tính chạy .NET 8 (cổng 5000)
-  String baseUrl = 'http://192.168.2.154:5000/api';
+  /// Default API URL:
+  /// - Cắm cáp USB (đã chạy adb reverse tcp:5000 tcp:5000): 127.0.0.1 / localhost
+  /// - Wi-Fi điện thoại thật cùng mạng máy tính: 192.168.1.42 (IP máy tính)
+  /// - Android Emulator: 10.0.2.2
+  /// - Windows / Web: localhost / 127.0.0.1
+  String baseUrl = 'http://127.0.0.1:5000/api';
 
   static const List<String> candidateBaseUrls = [
-    'http://192.168.2.154:5000/api',
     'http://127.0.0.1:5000/api',
-    'http://10.0.2.2:5000/api',
     'http://localhost:5000/api',
+    'http://192.168.1.42:5000/api',
+    'http://10.0.2.2:5000/api',
   ];
 
   // Bộ nhớ đệm tạm thời (In-memory Fallback) khi Backend .NET chưa chạy

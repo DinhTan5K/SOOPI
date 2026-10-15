@@ -667,7 +667,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          _buildSimplePlaceholder('Đơn hàng của bạn', Icons.receipt_long),
+          const OrderListScreen(),
           _buildSimplePlaceholder('Món ăn yêu thích', Icons.favorite),
           const ProfileScreen(),
         ],
