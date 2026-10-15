@@ -7,6 +7,7 @@ public sealed class SoopiDbContext(
     DbContextOptions<SoopiDbContext> options) : DbContext(options)
 {
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<ManagementAudit> ManagementAudits => Set<ManagementAudit>();
     public DbSet<UserAddress> Addresses => Set<UserAddress>();
     public DbSet<Restaurant> Restaurants => Set<Restaurant>();
     public DbSet<OpeningHour> OpeningHours => Set<OpeningHour>();
@@ -30,6 +31,14 @@ public sealed class SoopiDbContext(
         ConfigureCartAndMenu(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureReviewsAndPayments(modelBuilder);
+        modelBuilder.Entity<ManagementAudit>().HasIndex(a => new { a.TargetId, a.CreatedAt });
+        modelBuilder.Entity<Restaurant>().Property(r => r.ApprovalStatus).HasMaxLength(20).IsConcurrencyToken();
+        modelBuilder.Entity<Restaurant>().Property(r => r.IsLocked).IsConcurrencyToken();
+        modelBuilder.Entity<Restaurant>().HasIndex(r => new { r.OwnerId, r.ApprovalStatus });
+        modelBuilder.Entity<MenuItem>().HasQueryFilter(m => !m.IsDeleted);
+        modelBuilder.Entity<CartItem>().HasQueryFilter(c => !c.MenuItem!.IsDeleted);
+        modelBuilder.Entity<Restaurant>().Property<uint>("xmin").IsRowVersion();
+        modelBuilder.Entity<AppUser>().Property<uint>("xmin").IsRowVersion();
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)

@@ -45,6 +45,11 @@ CREATE INDEX IF NOT EXISTS "IX_user_addresses_user_id"
     ON user_addresses (user_id);
 
 CREATE TABLE IF NOT EXISTS "Restaurants" (
+    "ApprovalStatus" varchar(20) NOT NULL DEFAULT 'Pending',
+    "IsLocked" boolean NOT NULL DEFAULT false,
+    "ReviewReason" text,
+    "ReviewedBy" uuid,
+    "ReviewedAt" timestamptz,
     "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     "OwnerId" uuid REFERENCES users(id) ON DELETE SET NULL,
     "Name" varchar(200) NOT NULL,
@@ -60,7 +65,7 @@ CREATE TABLE IF NOT EXISTS "Restaurants" (
     "ReviewCount" integer NOT NULL DEFAULT 0,
     "TotalOrders" integer NOT NULL DEFAULT 0,
     "IsActive" boolean NOT NULL DEFAULT true,
-    "IsAcceptingOrders" boolean NOT NULL DEFAULT true
+    "IsAcceptingOrders" boolean NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS "OpeningHours" (
@@ -82,6 +87,7 @@ CREATE TABLE IF NOT EXISTS "MenuCategories" (
 );
 
 CREATE TABLE IF NOT EXISTS "MenuItems" (
+    "IsDeleted" boolean NOT NULL DEFAULT false,
     "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     "CategoryId" uuid NOT NULL REFERENCES "MenuCategories"("Id") ON DELETE CASCADE,
     "Name" varchar(200) NOT NULL,
@@ -208,3 +214,17 @@ CREATE TABLE IF NOT EXISTS "DeliveryLocations" (
 );
 CREATE INDEX IF NOT EXISTS "IX_DeliveryLocations_Order_Time"
     ON "DeliveryLocations" ("OrderId", "RecordedAt" DESC);
+
+CREATE INDEX IF NOT EXISTS "IX_Restaurants_OwnerId_ApprovalStatus"
+    ON "Restaurants" ("OwnerId", "ApprovalStatus");
+CREATE TABLE IF NOT EXISTS "ManagementAudits" (
+    "Id" uuid PRIMARY KEY,
+    "ActorId" uuid NOT NULL,
+    "TargetId" uuid NOT NULL,
+    "TargetType" text NOT NULL,
+    "Action" text NOT NULL,
+    "Reason" text,
+    "CreatedAt" timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "IX_ManagementAudits_TargetId_CreatedAt"
+    ON "ManagementAudits" ("TargetId", "CreatedAt");

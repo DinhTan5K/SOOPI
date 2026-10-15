@@ -7,8 +7,16 @@ using SoopiFoodBE.DataAccess.Dao;
 using SoopiFoodBE.DataAccess.Repositories;
 using SoopiFoodBE.Services;
 using Soopi.Backend.Services;
+using SoopiFoodBE.Contracts;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables().AddCommandLine(args);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddAuthorization();
+builder.Services.AddScoped<CurrentAccount>();
+builder.Services.AddScoped<RestaurantManagement>();
+builder.Services.AddProblemDetails();
 
 // Controllers & JSON configuration (tránh lỗi circular reference)
 builder.Services.AddControllers()
@@ -73,11 +81,12 @@ builder.Services.AddCors(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
+    c.OperationFilter<ManagementExamples>();
     c.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "SOOPI FOOD API",
         Version = "v1",
-        Description = "Backend API cho ứng dụng SOOPI FOOD (.NET 9 + PostgreSQL + Firebase Auth + Cloudinary)"
+        Description = "Backend API cho ứng dụng SOOPI FOOD (.NET 8 + PostgreSQL + Firebase Auth + Cloudinary)"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -85,8 +94,9 @@ builder.Services.AddSwaggerGen(c =>
         Description = "Nhập Firebase JWT Token: Bearer {token}",
         Name = "Authorization",
         In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer"
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT"
     });
 
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -106,8 +116,24 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+app.UseExceptionHandler(errors => errors.Run(async context =>
+{
+    var exception = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    var status = exception switch
+    {
+        ManagementException e => e.Status,
+        DbUpdateConcurrencyException => 409,
+        ArgumentException => 400,
+        KeyNotFoundException => 404,
+        _ => 500
+    };
+    if (status == 500) app.Logger.LogError(exception, "Unhandled API exception");
+    await Results.Problem(statusCode: status, title: status == 500 ? "Internal server error."
+        : status == 409 && exception is DbUpdateConcurrencyException ? "Resource changed; reload and retry." : exception?.Message).ExecuteAsync(context);
+}));
 
 // Khởi tạo Database nếu chưa có
+if (!app.Environment.IsEnvironment("Testing"))
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<SoopiDbContext>();
@@ -123,7 +149,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // HTTP request pipeline
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
@@ -138,3 +164,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }

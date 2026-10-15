@@ -1,16 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../services/profile_api_service.dart';
 
 import 'merchant_data.dart';
 import 'menu_editor.dart';
+import 'merchant_orders.dart';
+import 'menu_photo.dart';
+import 'restaurant_editor.dart';
 
 class MerchantScreen extends StatefulWidget {
-  const MerchantScreen({super.key});
+  const MerchantScreen({super.key, this.data});
+  final MerchantData? data;
   @override
   State<MerchantScreen> createState() => _MerchantScreenState();
 }
 
 class _MerchantScreenState extends State<MerchantScreen> {
-  final _data = MerchantData();
+  late final _data = widget.data ?? MerchantData(remote: true);
+  String? _loadError;
+  List<Map<String, dynamic>>? _restaurantChoices;
   final _search = TextEditingController();
   List<OpeningDay> _draft = [];
   bool _loading = true;
@@ -36,11 +45,15 @@ class _MerchantScreenState extends State<MerchantScreen> {
     setState(() {
       _loading = true;
       _loadFailed = false;
+      _restaurantChoices = null;
     });
     try {
       await _data.load();
-    } catch (_) {
+    } on RestaurantSelectionRequired catch (selection) {
+      _restaurantChoices = selection.restaurants;
+    } catch (error) {
       _loadFailed = true;
+      _loadError = error.toString();
     }
     if (!mounted) return;
     setState(() {
@@ -52,6 +65,66 @@ class _MerchantScreenState extends State<MerchantScreen> {
   void _message(String text) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _restaurant({bool create = false}) async {
+    if (_saving || !await _confirmLeave() || !mounted) return;
+    try {
+      final initial = create
+          ? null
+          : Map<String, dynamic>.from(
+              await _data.api.request(
+                'GET',
+                'restaurants/${_data.restaurantId}',
+              ),
+            );
+      if (!mounted) return;
+      final input = await editRestaurant(context, initial: initial);
+      if (input == null || !mounted) return;
+      setState(() => _saving = true);
+      final result = await _data.api.request(
+        create ? 'POST' : 'PUT',
+        create ? 'restaurants' : 'restaurants/${_data.restaurantId}',
+        input,
+      );
+      _data.restaurantId = result['id'];
+      _dirty = false;
+      await _load();
+    } catch (error) {
+      if (mounted) _message(error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _selectRestaurant() async {
+    if (_saving || !await _confirmLeave() || !mounted) return;
+    try {
+      final rows = await _data.listRestaurants();
+      if (!mounted) return;
+      final id = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Chọn quán'),
+          children: [
+            for (final row in rows)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, row['id'] as String),
+                child: Text('${row['name']} • ${row['approvalStatus']}'),
+              ),
+          ],
+        ),
+      );
+      if (id == null || !mounted) return;
+      _data.restaurantId = id;
+      _dirty = false;
+      _category = 'Tất cả';
+      _stock = 'Tất cả';
+      _search.clear();
+      await _load();
+    } catch (error) {
+      if (mounted) _message(error.toString());
+    }
   }
 
   Future<bool> _save({
@@ -98,11 +171,15 @@ class _MerchantScreenState extends State<MerchantScreen> {
   }
 
   Future<void> _edit([MenuItem? item]) async {
+    if (_data.categories.isEmpty) {
+      _message('Thêm danh mục trước khi thêm món.');
+      return;
+    }
     final result = await showModalBottomSheet<MenuItem>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => MenuEditor(item: item),
+      builder: (_) => MenuEditor(item: item, categories: _data.categories),
     );
     if (result == null || !mounted) return;
     final items = [..._data.items];
@@ -113,6 +190,66 @@ class _MerchantScreenState extends State<MerchantScreen> {
       items[index] = result;
     }
     await _save(menu: items);
+  }
+
+  Future<void> _categoryEditor([String? existing]) async {
+    final controller = TextEditingController(text: existing ?? '');
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(existing == null ? 'Thêm danh mục' : 'Sửa danh mục'),
+        content: TextField(
+          controller: controller,
+          maxLength: 100,
+          decoration: const InputDecoration(labelText: 'Tên danh mục'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Hủy'),
+          ),
+          if (existing != null)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'DELETE'),
+              child: const Text('Xóa'),
+            ),
+          FilledButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(context, existing == null ? 'POST' : 'PUT');
+              }
+            },
+            child: const Text('Lưu'),
+          ),
+        ],
+      ),
+    );
+    final name = controller.text.trim();
+    Future<void>.delayed(const Duration(seconds: 1), controller.dispose);
+    if (action == null || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      final path = 'restaurants/${_data.restaurantId}/categories';
+      await _data.api.request(
+        action,
+        existing == null ? path : '$path/${_data.categoryIds[existing]}',
+        action == 'DELETE'
+            ? null
+            : {
+                'name': name,
+                'sortOrder': existing == null
+                    ? _data.categories.length
+                    : _data.categories.indexOf(existing),
+              },
+      );
+      _category = 'Tất cả';
+      await _data.load();
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) _message(error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _delete(MenuItem item) async {
@@ -188,12 +325,36 @@ class _MerchantScreenState extends State<MerchantScreen> {
       appBar: AppBar(
         title: const Text('SOOPI • Chủ quán'),
         actions: [
+          if (_data.remote) ...[
+            IconButton(
+              tooltip: 'Chọn quán',
+              onPressed: _loading || _saving ? null : _selectRestaurant,
+              icon: const Icon(Icons.storefront),
+            ),
+            IconButton(
+              tooltip: 'Đăng ký quán',
+              onPressed: _loading || _saving
+                  ? null
+                  : () => _restaurant(create: true),
+              icon: const Icon(Icons.add_business),
+            ),
+          ],
           IconButton(
             tooltip: 'Đăng xuất',
             onPressed: _saving
                 ? null
                 : () async {
                     if (await _confirmLeave() && mounted) {
+                      if (_data.remote) {
+                        try {
+                          await FirebaseAuth.instance.signOut();
+                          ProfileApiService().clearCache();
+                        } catch (error) {
+                          if (mounted) _message(error.toString());
+                          return;
+                        }
+                        if (!mounted) return;
+                      }
                       setState(() => _dirty = false);
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted) Navigator.pop(context);
@@ -206,14 +367,27 @@ class _MerchantScreenState extends State<MerchantScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
+          : _restaurantChoices != null
+          ? _restaurantPicker()
           : _loadFailed
           ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Không thể đọc dữ liệu quán.'),
+                  Text(
+                    _loadError ?? 'Không thể đọc dữ liệu quán.',
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 12),
                   FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                  if (_data.remote && _data.restaurantId == null)
+                    OutlinedButton.icon(
+                      onPressed: _saving
+                          ? null
+                          : () => _restaurant(create: true),
+                      icon: const Icon(Icons.add_business),
+                      label: const Text('Đăng ký quán ăn'),
+                    ),
                 ],
               ),
             )
@@ -222,18 +396,20 @@ class _MerchantScreenState extends State<MerchantScreen> {
               child: Column(
                 children: [
                   if (_saving) const LinearProgressIndicator(),
-                  if (!_data.supportsStorage)
-                    const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Text(
-                        'Bản demo trên nền tảng này chỉ lưu trong phiên.',
-                      ),
-                    ),
                   Expanded(
                     child: Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 760),
-                        child: _tab == 0 ? _shop() : _menu(),
+                        child: IndexedStack(
+                          index: _tab,
+                          children: [
+                            _shop(),
+                            _menu(),
+                            MerchantOrders(
+                              acceptingOrders: _data.acceptingOrders,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -242,7 +418,8 @@ class _MerchantScreenState extends State<MerchantScreen> {
             ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
-        onDestinationSelected: _saving
+        onDestinationSelected:
+            _saving || _loading || _loadFailed || _restaurantChoices != null
             ? null
             : (value) => setState(() => _tab = value),
         destinations: const [
@@ -255,6 +432,44 @@ class _MerchantScreenState extends State<MerchantScreen> {
             icon: Icon(Icons.restaurant_menu),
             label: 'Thực đơn',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Đơn hàng',
+          ),
+        ],
+      ),
+    ),
+  );
+  Widget _restaurantPicker() => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 760),
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const Text(
+            'Chọn quán để quản lý',
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text('Tài khoản của bạn sở hữu nhiều quán.'),
+          const SizedBox(height: 16),
+          for (final restaurant in _restaurantChoices!)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.storefront),
+                title: Text(restaurant['name'] as String),
+                subtitle: Text(
+                  '${restaurant['address'] ?? ''} • ${restaurant['approvalStatus'] ?? ''}',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  _data.restaurantId = restaurant['id'] as String;
+                  _tab = 0;
+                  _load();
+                },
+              ),
+            ),
         ],
       ),
     ),
@@ -267,11 +482,35 @@ class _MerchantScreenState extends State<MerchantScreen> {
         style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
       ),
       const SizedBox(height: 4),
-      const Text(
-        'Soopi Burger Fastfood',
+      Text(
+        '${_data.restaurantName} • ${_data.approvalStatus}',
         style: TextStyle(color: Colors.black54),
       ),
       const SizedBox(height: 20),
+      if (_data.remote) ...[
+        OutlinedButton(
+          onPressed: _restaurant,
+          child: const Text('Sửa thông tin quán'),
+        ),
+        if (_data.approvalStatus == 'Rejected')
+          OutlinedButton(
+            onPressed: () async {
+              setState(() => _saving = true);
+              try {
+                await _data.api.request(
+                  'POST',
+                  'restaurants/${_data.restaurantId}/resubmit',
+                );
+                await _load();
+              } catch (error) {
+                if (mounted) _message(error.toString());
+              } finally {
+                if (mounted) setState(() => _saving = false);
+              }
+            },
+            child: const Text('Gửi duyệt lại'),
+          ),
+      ],
       Card(
         color: _data.acceptingOrders
             ? const Color(0xFFEAF5EC)
@@ -435,7 +674,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
         const SizedBox(height: 12),
         Wrap(
           spacing: 8,
-          children: ['Tất cả', ...foodCategories]
+          children: ['Tất cả', ..._data.categories]
               .map(
                 (c) => ChoiceChip(
                   label: Text(c),
@@ -445,6 +684,22 @@ class _MerchantScreenState extends State<MerchantScreen> {
               )
               .toList(),
         ),
+        if (_data.remote)
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                onPressed: () => _categoryEditor(),
+                icon: const Icon(Icons.add),
+                label: const Text('Thêm danh mục'),
+              ),
+              if (_category != 'Tất cả')
+                TextButton(
+                  onPressed: () => _categoryEditor(_category),
+                  child: const Text('Sửa / xóa danh mục'),
+                ),
+            ],
+          ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -488,20 +743,23 @@ class _MerchantScreenState extends State<MerchantScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFEAD4),
-                          borderRadius: BorderRadius.circular(14),
+                      if (item.imageBase64 != null)
+                        MenuPhoto(imageBase64: item.imageBase64, size: 52)
+                      else
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFEAD4),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            item.category == 'Đồ uống'
+                                ? Icons.local_cafe_outlined
+                                : Icons.lunch_dining,
+                            color: Colors.deepOrange,
+                          ),
                         ),
-                        child: Icon(
-                          item.category == 'Đồ uống'
-                              ? Icons.local_cafe_outlined
-                              : Icons.lunch_dining,
-                          color: Colors.deepOrange,
-                        ),
-                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
