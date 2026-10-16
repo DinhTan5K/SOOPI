@@ -29,6 +29,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     _shipperProgress = Tween<double>(begin: 0.35, end: 0.70).animate(
       CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
     );
+
+    _orderData.syncTrack(widget.orderId);
   }
 
   @override

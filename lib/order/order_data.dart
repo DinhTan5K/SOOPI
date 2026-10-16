@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../services/order_api_service.dart';
 
 enum OrderStatus {
   pending,
@@ -170,10 +171,45 @@ class OrderData extends ChangeNotifier {
   }
 
   final List<OrderModel> _orders = [];
+  bool isLoading = false;
+  bool isFromBackend = false;
 
   List<OrderModel> get orders => List.unmodifiable(_orders);
   List<OrderModel> get activeOrders => _orders.where((o) => o.isActive).toList();
   List<OrderModel> get pastOrders => _orders.where((o) => !o.isActive).toList();
+
+  Future<void> refreshFromApi() async {
+    isLoading = true;
+    notifyListeners();
+    try {
+      final remoteOrders = await OrderApiService().fetchOrders();
+      if (remoteOrders.isNotEmpty) {
+        _orders.clear();
+        _orders.addAll(remoteOrders);
+        isFromBackend = true;
+      }
+    } catch (e) {
+      debugPrint('OrderData: Chưa kết nối được BE ($e), tiếp tục dùng dữ liệu local');
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> syncTrack(String orderId) async {
+    try {
+      final updated = await OrderApiService().trackOrder(orderId);
+      if (updated != null) {
+        final idx = _orders.indexWhere((o) => o.id == orderId);
+        if (idx != -1) {
+          _orders[idx] = updated;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('OrderData: Chưa đồng bộ được tracking từ BE ($e)');
+    }
+  }
 
   OrderModel? findById(String id) {
     try {
@@ -400,5 +436,18 @@ class OrderData extends ChangeNotifier {
 
     order.review = review;
     notifyListeners();
+
+    OrderApiService().submitReview(
+      orderId: orderId,
+      restaurantRating: review.restaurantRating,
+      shipperRating: review.shipperRating,
+      comment: review.restaurantComment.isNotEmpty
+          ? review.restaurantComment
+          : (review.shipperComment.isNotEmpty ? review.shipperComment : 'Đánh giá món ăn'),
+    ).then((success) {
+      if (success) {
+        debugPrint('OrderData: Gửi đánh giá lên Backend thành công ($orderId)');
+      }
+    });
   }
 }

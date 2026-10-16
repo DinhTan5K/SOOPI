@@ -19,6 +19,7 @@ class _OrderListScreenState extends State<OrderListScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _orderData.refreshFromApi();
   }
 
   @override
@@ -89,6 +90,31 @@ class _OrderListScreenState extends State<OrderListScreen>
               'Đơn hàng của tôi',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
             ),
+            actions: [
+              IconButton(
+                tooltip: 'Làm mới từ máy chủ',
+                onPressed: () async {
+                  await _orderData.refreshFromApi();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(_orderData.isFromBackend
+                            ? '✅ Đã tải đơn hàng từ máy chủ BE'
+                            : 'ℹ️ Đang dùng dữ liệu offline'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                icon: _orderData.isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                      )
+                    : const Icon(Icons.refresh, color: Colors.orange),
+              ),
+            ],
             elevation: 0,
             bottom: TabBar(
               controller: _tabController,
@@ -170,10 +196,14 @@ class _OrderListScreenState extends State<OrderListScreen>
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: orders.length,
-      itemBuilder: (context, index) => _buildOrderCard(orders[index]),
+    return RefreshIndicator(
+      onRefresh: _orderData.refreshFromApi,
+      color: Colors.orange,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: orders.length,
+        itemBuilder: (context, index) => _buildOrderCard(orders[index]),
+      ),
     );
   }
 
