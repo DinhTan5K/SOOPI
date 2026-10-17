@@ -153,21 +153,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 ),
               ],
             ),
-            actions: [
-              IconButton(
-                tooltip: 'Giả lập bước tiếp theo',
-                onPressed: () {
-                  _orderData.advanceOrderStatus(order.id);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Đã chuyển trạng thái: ${order.status.label}'),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.fast_forward, color: Colors.orange),
-              ),
-            ],
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -175,29 +160,6 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildMockMap(order),
-
-                const SizedBox(height: 16),
-
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.amber.shade300),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.info_outline, color: Colors.amber, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Trạng thái: ${order.status.label}. Bấm nút ⏩ góc trên để chuyển bước tiếp theo.',
-                          style: TextStyle(fontSize: 12, color: Colors.brown.shade800),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
 
                 const SizedBox(height: 16),
 
