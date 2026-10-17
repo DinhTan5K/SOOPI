@@ -19,6 +19,7 @@ class _OrderListScreenState extends State<OrderListScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _orderData.refreshFromApi();
   }
 
   @override
@@ -36,7 +37,6 @@ class _OrderListScreenState extends State<OrderListScreen>
         duration: const Duration(seconds: 2),
       ),
     );
-    // Tự động chuyển về tab "Đang đến" để người dùng thấy ngay đơn mới
     _tabController.animateTo(0);
   }
 
@@ -91,6 +91,31 @@ class _OrderListScreenState extends State<OrderListScreen>
               'Đơn hàng của tôi',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
             ),
+            actions: [
+              IconButton(
+                tooltip: 'Làm mới từ máy chủ',
+                onPressed: () async {
+                  await _orderData.refreshFromApi();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(_orderData.isFromBackend
+                            ? '✅ Đã tải đơn hàng từ máy chủ BE'
+                            : 'ℹ️ Đang dùng dữ liệu offline'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                icon: _orderData.isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                      )
+                    : const Icon(Icons.refresh, color: Colors.orange),
+              ),
+            ],
             elevation: 0,
             bottom: TabBar(
               controller: _tabController,
@@ -172,10 +197,14 @@ class _OrderListScreenState extends State<OrderListScreen>
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: orders.length,
-      itemBuilder: (context, index) => _buildOrderCard(orders[index]),
+    return RefreshIndicator(
+      onRefresh: _orderData.refreshFromApi,
+      color: Colors.orange,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: orders.length,
+        itemBuilder: (context, index) => _buildOrderCard(orders[index]),
+      ),
     );
   }
 
@@ -197,7 +226,6 @@ class _OrderListScreenState extends State<OrderListScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header quán
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -253,7 +281,6 @@ class _OrderListScreenState extends State<OrderListScreen>
 
           const Divider(height: 1),
 
-          // Tóm tắt món
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -290,7 +317,6 @@ class _OrderListScreenState extends State<OrderListScreen>
 
           const Divider(height: 1),
 
-          // Nút bấm tác vụ
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: _buildCardActions(order),
@@ -301,7 +327,6 @@ class _OrderListScreenState extends State<OrderListScreen>
   }
 
   Widget _buildCardActions(OrderModel order) {
-    // Đơn đang chạy
     if (order.isActive) {
       return SizedBox(
         width: double.infinity,
@@ -313,7 +338,7 @@ class _OrderListScreenState extends State<OrderListScreen>
             );
           },
           icon: const Icon(Icons.two_wheeler, size: 20),
-          label: const Text('Theo dõi đơn hàng (UC06)', style: TextStyle(fontWeight: FontWeight.bold)),
+          label: const Text('Theo dõi đơn hàng ', style: TextStyle(fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange,
             foregroundColor: Colors.white,
@@ -325,15 +350,13 @@ class _OrderListScreenState extends State<OrderListScreen>
       );
     }
 
-    // Đơn đã xong hoặc hủy
     return Row(
       children: [
-        // Nút mua lại (UC07)
         Expanded(
           child: OutlinedButton.icon(
             onPressed: () => _onReorder(order),
             icon: const Icon(Icons.replay, size: 18),
-            label: const Text('Mua lại (UC07)', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: const Text('Mua lại', style: TextStyle(fontWeight: FontWeight.bold)),
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.orange,
               side: const BorderSide(color: Colors.orange),
@@ -343,7 +366,6 @@ class _OrderListScreenState extends State<OrderListScreen>
           ),
         ),
 
-        // Nút đánh giá (UC08) nếu hoàn thành
         if (order.status == OrderStatus.completed) ...[
           const SizedBox(width: 10),
           Expanded(
@@ -374,7 +396,7 @@ class _OrderListScreenState extends State<OrderListScreen>
                       );
                     },
                     icon: const Icon(Icons.star_border, size: 18),
-                    label: const Text('Đánh giá (UC08)', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('Đánh giá', style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.amber.shade700,
                       foregroundColor: Colors.white,

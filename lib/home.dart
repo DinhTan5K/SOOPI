@@ -667,7 +667,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const OrderListScreen(),
+          const SafeArea(child: OrderListScreen()),
           _buildSimplePlaceholder('Món ăn yêu thích', Icons.favorite),
           const ProfileScreen(),
         ],

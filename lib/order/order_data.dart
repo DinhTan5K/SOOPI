@@ -1,15 +1,12 @@
 import 'package:flutter/foundation.dart';
-
-// -------------------------------------------------------------
-// 1. CÁC ENUM VÀ MODEL DỮ LIỆU CỦA ĐƠN HÀNG
-// -------------------------------------------------------------
+import '../services/order_api_service.dart';
 
 enum OrderStatus {
-  pending, // Chờ xác nhận
-  preparing, // Quán đang làm
-  delivering, // Tài xế đang giao
-  completed, // Đã hoàn thành
-  cancelled, // Đã hủy
+  pending,
+  preparing,
+  delivering,
+  completed,
+  cancelled,
 }
 
 extension OrderStatusExtension on OrderStatus {
@@ -99,10 +96,10 @@ class ShipperInfo {
 }
 
 class ReviewModel {
-  final int restaurantRating; // 1 - 5 sao
+  final int restaurantRating;
   final List<String> restaurantTags;
   final String restaurantComment;
-  final int shipperRating; // 1 - 5 sao
+  final int shipperRating;
   final List<String> shipperTags;
   final String shipperComment;
   final int tipAmount;
@@ -165,10 +162,6 @@ class OrderModel {
 String money(int value) =>
     '${value.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]}.')} đ';
 
-// -------------------------------------------------------------
-// 2. CLASS QUẢN LÝ DỮ LIỆU ĐƠN HÀNG (STATE & STORAGE)
-// -------------------------------------------------------------
-
 class OrderData extends ChangeNotifier {
   static final OrderData _instance = OrderData._internal();
   factory OrderData() => _instance;
@@ -178,10 +171,45 @@ class OrderData extends ChangeNotifier {
   }
 
   final List<OrderModel> _orders = [];
+  bool isLoading = false;
+  bool isFromBackend = false;
 
   List<OrderModel> get orders => List.unmodifiable(_orders);
   List<OrderModel> get activeOrders => _orders.where((o) => o.isActive).toList();
   List<OrderModel> get pastOrders => _orders.where((o) => !o.isActive).toList();
+
+  Future<void> refreshFromApi() async {
+    isLoading = true;
+    notifyListeners();
+    try {
+      final remoteOrders = await OrderApiService().fetchOrders();
+      if (remoteOrders.isNotEmpty) {
+        _orders.clear();
+        _orders.addAll(remoteOrders);
+        isFromBackend = true;
+      }
+    } catch (e) {
+      debugPrint('OrderData: Chưa kết nối được BE ($e), tiếp tục dùng dữ liệu local');
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> syncTrack(String orderId) async {
+    try {
+      final updated = await OrderApiService().trackOrder(orderId);
+      if (updated != null) {
+        final idx = _orders.indexWhere((o) => o.id == orderId);
+        if (idx != -1) {
+          _orders[idx] = updated;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('OrderData: Chưa đồng bộ được tracking từ BE ($e)');
+    }
+  }
 
   OrderModel? findById(String id) {
     try {
@@ -192,7 +220,6 @@ class OrderData extends ChangeNotifier {
   }
 
   void _initSampleData() {
-    // 1. Đơn đang giao (Để test UC06: Theo dõi đơn hàng thời gian thực + Bản đồ)
     _orders.add(
       OrderModel(
         id: 'SP-8839',
@@ -242,7 +269,6 @@ class OrderData extends ChangeNotifier {
       ),
     );
 
-    // 2. Đơn hoàn thành chưa đánh giá (Để test UC07 Lịch sử đơn + UC08 Đánh giá ngay)
     _orders.add(
       OrderModel(
         id: 'SP-7512',
@@ -281,7 +307,6 @@ class OrderData extends ChangeNotifier {
       ),
     );
 
-    // 3. Đơn hoàn thành đã đánh giá (Để test UC07 Mua lại đơn cũ + Xem lại đánh giá)
     _orders.add(
       OrderModel(
         id: 'SP-6201',
@@ -330,7 +355,6 @@ class OrderData extends ChangeNotifier {
       ),
     );
 
-    // 4. Đơn đã hủy
     _orders.add(
       OrderModel(
         id: 'SP-4820',
@@ -353,68 +377,6 @@ class OrderData extends ChangeNotifier {
     );
   }
 
-  /// Đặt đơn hàng mới từ giỏ hàng quán ăn
-  OrderModel createOrder({
-    required String restaurantName,
-    required String restaurantAddress,
-    String restaurantEmoji = '🏪',
-    required List<OrderItem> items,
-    required String deliveryAddress,
-    String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
-    int deliveryFee = 16000,
-    int discount = 0,
-  }) {
-    final newId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
-    final newOrder = OrderModel(
-      id: newId,
-      restaurantName: restaurantName,
-      restaurantAddress: restaurantAddress,
-      restaurantEmoji: restaurantEmoji,
-      items: items,
-      deliveryFee: deliveryFee,
-      discount: discount,
-      paymentMethod: paymentMethod,
-      deliveryAddress: deliveryAddress,
-      status: OrderStatus.pending,
-      createdAt: DateTime.now(),
-      estimatedDeliveryMinutes: 25,
-      shipper: ShipperInfo(
-        name: 'Trần Văn Hải',
-        phone: '0981.234.567',
-        rating: 4.9,
-        bikePlate: '29-F1 999.22',
-        bikeType: 'Honda AirBlade (Đen xám)',
-      ),
-    );
-
-    _orders.insert(0, newOrder);
-    notifyListeners();
-
-    // Giả lập tiến trình thời gian thực:
-    // Sau 8 giây: Quán nhận đơn & bắt đầu làm
-    Future.delayed(const Duration(seconds: 8), () {
-      final current = findById(newId);
-      if (current != null && current.status == OrderStatus.pending) {
-        current.status = OrderStatus.preparing;
-        current.estimatedDeliveryMinutes = 18;
-        notifyListeners();
-      }
-    });
-
-    // Sau 25 giây: Tài xế lấy món và bắt đầu giao
-    Future.delayed(const Duration(seconds: 25), () {
-      final current = findById(newId);
-      if (current != null && current.status == OrderStatus.preparing) {
-        current.status = OrderStatus.delivering;
-        current.estimatedDeliveryMinutes = 12;
-        notifyListeners();
-      }
-    });
-
-    return newOrder;
-  }
-
-  /// UC06: Giả lập chuyển bước tiến trình thời gian thực
   void advanceOrderStatus(String orderId) {
     final order = findById(orderId);
     if (order == null) return;
@@ -432,7 +394,6 @@ class OrderData extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// UC07: Mua lại đơn cũ (Re-order)
   OrderModel reorder(OrderModel oldOrder) {
     final newId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
     final newOrder = OrderModel(
@@ -469,12 +430,24 @@ class OrderData extends ChangeNotifier {
     return newOrder;
   }
 
-  /// UC08: Gửi đánh giá cho Nhà hàng & Shipper
   void submitReview(String orderId, ReviewModel review) {
     final order = findById(orderId);
     if (order == null) return;
 
     order.review = review;
     notifyListeners();
+
+    OrderApiService().submitReview(
+      orderId: orderId,
+      restaurantRating: review.restaurantRating,
+      shipperRating: review.shipperRating,
+      comment: review.restaurantComment.isNotEmpty
+          ? review.restaurantComment
+          : (review.shipperComment.isNotEmpty ? review.shipperComment : 'Đánh giá món ăn'),
+    ).then((success) {
+      if (success) {
+        debugPrint('OrderData: Gửi đánh giá lên Backend thành công ($orderId)');
+      }
+    });
   }
 }
