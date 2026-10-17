@@ -85,13 +85,23 @@ public sealed class RestaurantService(
         if (restaurant is null)
             return false;
 
+        await EnsureOwnerCanManage(restaurant, ct);
+        if (input.IsAcceptingOrders && (restaurant.ApprovalStatus != "Approved" || !input.IsActive))
+            throw new ManagementException(409, "Only approved, active restaurants can accept orders.");
+        if (restaurant.ApprovalStatus == "Approved" && (restaurant.Name != input.Name || restaurant.Description != input.Description
+            || restaurant.Phone != input.Phone || restaurant.Address != input.Address || restaurant.City != input.City))
+        {
+            restaurant.ApprovalStatus = "Pending";
+            db.ManagementAudits.Add(new ManagementAudit { ActorId = ownerId, TargetId = id, Action = "Resubmitted" });
+        }
+
         restaurant.Name = input.Name;
         restaurant.Description = input.Description;
         restaurant.Phone = input.Phone;
         restaurant.Address = input.Address;
         restaurant.City = input.City;
         restaurant.IsActive = input.IsActive;
-        restaurant.IsAcceptingOrders = input.IsAcceptingOrders;
+        restaurant.IsAcceptingOrders = input.IsAcceptingOrders && restaurant.ApprovalStatus == "Approved";
 
         await db.SaveChangesAsync(ct);
         return true;
@@ -106,6 +116,8 @@ public sealed class RestaurantService(
     {
         if (day > 6)
             throw new ArgumentException("DayOfWeek must be 0–6");
+        if (!input.IsClosed && input.OpensAt >= input.ClosesAt)
+            throw new ArgumentException("Opening time must precede closing time.");
 
         var restaurantExists = await db.Restaurants.AnyAsync(
             item => item.Id == restaurantId && item.OwnerId == ownerId,
@@ -113,6 +125,7 @@ public sealed class RestaurantService(
 
         if (!restaurantExists)
             return false;
+        await EnsureOwnerCanManage(await db.Restaurants.SingleAsync(r => r.Id == restaurantId, ct), ct);
 
         var openingHour = await db.OpeningHours.FirstOrDefaultAsync(
             item => item.RestaurantId == restaurantId && item.DayOfWeek == day,
@@ -149,6 +162,7 @@ public sealed class RestaurantService(
                     && item.Restaurant!.OwnerId == ownerId,
                 ct)
             ?? throw new KeyNotFoundException("Menu category not found");
+        await EnsureOwnerCanManage(category.Restaurant!, ct);
 
         var menuItem = id.HasValue
             ? await db.MenuItems.FirstOrDefaultAsync(
@@ -176,15 +190,22 @@ public sealed class RestaurantService(
 
     public async Task<bool> DeleteMenu(Guid ownerId, Guid id, CancellationToken ct)
     {
-        var menuItem = await db.MenuItems.FirstOrDefaultAsync(
+        var menuItem = await db.MenuItems.Include(m => m.Category).FirstOrDefaultAsync(
             item => item.Id == id && item.Category!.Restaurant!.OwnerId == ownerId,
             ct);
 
         if (menuItem is null)
             return false;
-
-        db.MenuItems.Remove(menuItem);
+        await EnsureOwnerCanManage(await db.Restaurants.SingleAsync(r => r.Id == menuItem.Category!.RestaurantId, ct), ct);
+        menuItem.IsDeleted = true;
+        menuItem.IsAvailable = false;
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    private async Task EnsureOwnerCanManage(Restaurant restaurant, CancellationToken ct)
+    {
+        if (restaurant.IsLocked || !await db.Users.AnyAsync(u => u.Id == restaurant.OwnerId && !u.IsLocked, ct))
+            throw new ManagementException(403, "Restaurant or owner is locked.");
     }
 }

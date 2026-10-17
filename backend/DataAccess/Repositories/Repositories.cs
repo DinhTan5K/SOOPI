@@ -81,7 +81,9 @@ public sealed class RestaurantRepository(SoopiDbContext db) : IRestaurantReposit
             .Include(restaurant => restaurant.Categories)
                 .ThenInclude(cat => cat.Items)
             .AsNoTracking()
-            .Where(restaurant => restaurant.IsActive && restaurant.IsAcceptingOrders);
+            .Where(restaurant => restaurant.IsActive && restaurant.IsAcceptingOrders
+                && restaurant.ApprovalStatus == "Approved" && !restaurant.IsLocked
+                && restaurant.Owner != null && !restaurant.Owner.IsLocked);
 
         if (!string.IsNullOrWhiteSpace(query))
         {
@@ -144,12 +146,15 @@ public sealed class RestaurantRepository(SoopiDbContext db) : IRestaurantReposit
         .Include(restaurant => restaurant.Categories)
             .ThenInclude(category => category.Items)
         .Include(restaurant => restaurant.OpeningHours)
-        .FirstOrDefaultAsync(restaurant => restaurant.Id == id, ct);
+        .FirstOrDefaultAsync(restaurant => restaurant.Id == id && restaurant.ApprovalStatus == "Approved"
+            && !restaurant.IsLocked && restaurant.Owner != null && !restaurant.Owner.IsLocked, ct);
 
     public Task<List<MenuItem>> MenuAsync(Guid restaurantId, CancellationToken ct) =>
         db.MenuItems
             .Include(item => item.Category)
-            .Where(item => item.Category!.RestaurantId == restaurantId)
+            .Where(item => item.Category!.RestaurantId == restaurantId
+                && item.Category.Restaurant!.ApprovalStatus == "Approved" && !item.Category.Restaurant.IsLocked
+                && item.Category.Restaurant.Owner != null && !item.Category.Restaurant.Owner.IsLocked)
             .AsNoTracking()
             .ToListAsync(ct);
 

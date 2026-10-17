@@ -1,14 +1,16 @@
 # SOOPI FOOD API
 
-Backend ASP.NET Core Web API (.NET 9) for the existing Flutter app. The API is organized into `Models` (domain entities), `DataAccess/Dao` (EF persistence), `DataAccess/Repositories` (queries), `Services` (business rules), `Contracts` (request DTOs), and `Controllers` (HTTP endpoints). PostgreSQL is the relational database; entity keys are UUIDs.
+Backend ASP.NET Core Web API (.NET 8) for the existing Flutter app. The API is organized into `Models` (domain entities), `DataAccess/Dao` (EF persistence), `DataAccess/Repositories` (queries), `Services` (business rules), `Contracts` (request DTOs), and `Controllers` (HTTP endpoints). PostgreSQL is the relational database; entity keys are UUIDs.
+
+Restaurant ownership, approval, category/menu management and administrator APIs are documented in [backend/RESTAURANT_API.md](backend/RESTAURANT_API.md). Apply `database/restaurant_management_upgrade.sql` to an existing database before starting this version; existing restaurants require review again.
 
 ## Start locally
 
 1. Create a PostgreSQL database named `soopifood` (for example, in pgAdmin), then run `database/soopifood.sql` against it.
-2. Set the PostgreSQL username and password in `SoopiFoodBE/appsettings.json`.
-3. From the `SOOPI` folder, run `dotnet restore SoopiFood.sln` and `dotnet run --project SoopiFoodBE`. Swagger is available in Development mode at `/swagger`.
+2. Configure `ConnectionStrings__SoopiFood` using your PostgreSQL credentials, or use the ignored `backend/appsettings.Local.json` file.
+3. From the `SOOPI` folder, run `dotnet restore SoopiFood.sln` and `dotnet run --project backend/Soopi.Backend.csproj`. Swagger is available in Development mode at `/swagger`.
 
-The current endpoints accept user/owner IDs in the route to make integration straightforward. Before exposing the API, validate those IDs against Firebase-authenticated claims and enforce Customer/Owner/Admin/Shipper role policies. Payment providers are represented by `Payments`; provider callbacks and production payment signing are not configured.
+Restaurant management and admin routes require Firebase JWTs and server-side ownership/Admin checks; ownership does not require changing a Customer's role. Legacy restaurant writes and account-lock routes are also protected. Older customer/order endpoints still use IDs in their URLs and are outside this restaurant API change. Payment providers are represented by `Payments`; provider callbacks and production payment signing are not configured.
 
 ## UC coverage and main tables
 

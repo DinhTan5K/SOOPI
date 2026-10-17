@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using SoopiFoodBE.Contracts;
 using SoopiFoodBE.Services;
 
@@ -69,6 +70,7 @@ public sealed class UsersController(IUserService service) : ControllerBase
     }
 
     [HttpPut("{userId:guid}/lock")]
+    [Authorize, ManagementAccess(admin: true)]
     public async Task<IActionResult> Lock(
         Guid userId,
         [FromQuery] bool locked,

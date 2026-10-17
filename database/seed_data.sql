@@ -11,6 +11,27 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 BEGIN;
 
+-- Tự động bổ sung các cột mới nhất nếu schema chưa có
+ALTER TABLE "MenuItems" ADD COLUMN IF NOT EXISTS "IsDeleted" boolean NOT NULL DEFAULT false;
+ALTER TABLE "Restaurants" ADD COLUMN IF NOT EXISTS "ApprovalStatus" varchar(20) NOT NULL DEFAULT 'Approved';
+ALTER TABLE "Restaurants" ADD COLUMN IF NOT EXISTS "IsLocked" boolean NOT NULL DEFAULT false;
+ALTER TABLE "Restaurants" ADD COLUMN IF NOT EXISTS "ReviewReason" text;
+ALTER TABLE "Restaurants" ADD COLUMN IF NOT EXISTS "ReviewedBy" uuid;
+ALTER TABLE "Restaurants" ADD COLUMN IF NOT EXISTS "ReviewedAt" timestamptz;
+CREATE TABLE IF NOT EXISTS "ManagementSchemaVersions" (
+    "Version" text PRIMARY KEY,
+    "AppliedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS "ManagementAudits" (
+    "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    "ActorId" uuid NOT NULL,
+    "TargetId" uuid NOT NULL,
+    "TargetType" text NOT NULL,
+    "Action" text NOT NULL,
+    "Reason" text,
+    "CreatedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================================
 -- 1. BẢNG USERS (Người dùng hệ thống: Admin, Owner, Shipper, Customer)
 -- ============================================================================
@@ -98,7 +119,7 @@ ON CONFLICT (id) DO NOTHING;
 -- ============================================================================
 -- 3. BẢNG "Restaurants" (Danh sách quán ăn / nhà hàng)
 -- ============================================================================
-INSERT INTO "Restaurants" ("Id", "OwnerId", "Name", "Description", "Phone", "Address", "City", "ImageUrl", "Latitude", "Longitude", "AverageRating", "ReviewCount", "TotalOrders", "IsActive", "IsAcceptingOrders")
+INSERT INTO "Restaurants" ("Id", "OwnerId", "Name", "Description", "Phone", "Address", "City", "ImageUrl", "Latitude", "Longitude", "AverageRating", "ReviewCount", "TotalOrders", "IsActive", "IsAcceptingOrders", "ApprovalStatus", "IsLocked")
 VALUES
     -- 1. Burger
     (

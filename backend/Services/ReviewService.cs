@@ -95,7 +95,8 @@ public sealed class ReviewService(SoopiDbContext db) : IReviewService
             if (favorite is null)
             {
                 var restaurantExists = await db.Restaurants.AnyAsync(
-                    item => item.Id == restaurantId,
+                    item => item.Id == restaurantId && item.ApprovalStatus == "Approved"
+                        && !item.IsLocked && item.Owner != null && !item.Owner.IsLocked,
                     ct);
 
                 if (!restaurantExists)
@@ -121,6 +122,7 @@ public sealed class ReviewService(SoopiDbContext db) : IReviewService
         db.Favorites
             .Where(favorite => favorite.UserId == userId)
             .Select(favorite => favorite.Restaurant!)
+            .Where(r => r.ApprovalStatus == "Approved" && !r.IsLocked && r.Owner != null && !r.Owner.IsLocked)
             .AsNoTracking()
             .ToListAsync(ct);
 }

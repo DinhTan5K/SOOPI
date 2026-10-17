@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'home.dart';
@@ -5,6 +6,7 @@ import 'services/auth_service.dart';
 import 'services/auth_api_service.dart';
 import 'services/profile_api_service.dart';
 import 'widgets/otp_verification_dialog.dart';
+import 'widgets/forgot_password_dialog.dart';
 import 'merchant/merchant_login_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -63,7 +65,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       if (_isLogin) {
-        await _authService.signInWithEmailPassword(email, password);
+        await _authService
+            .signInWithEmailPassword(email, password)
+            .timeout(const Duration(seconds: 15));
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -124,7 +128,9 @@ class _AuthScreenState extends State<AuthScreen> {
           });
         }
 
-        final cred = await _authService.signUpWithEmailPassword(email, password);
+        final cred = await _authService
+            .signUpWithEmailPassword(email, password)
+            .timeout(const Duration(seconds: 15));
         if (fullName.isNotEmpty) {
           await cred.user?.updateDisplayName(fullName);
         }
@@ -146,6 +152,15 @@ class _AuthScreenState extends State<AuthScreen> {
             MaterialPageRoute(builder: (context) => const HomeScreen()),
           );
         }
+      }
+    } on TimeoutException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Quá thời gian kết nối. Vui lòng kiểm tra lại kết nối Wi-Fi/4G trên điện thoại!'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
       }
     } on FirebaseAuthException catch (e) {
       String message = 'Đã có lỗi xảy ra. Vui lòng thử lại sau.';
@@ -190,80 +205,9 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _showForgotPasswordDialog() {
-    final resetEmailController = TextEditingController(text: _emailController.text.trim());
-    final forgotFormKey = GlobalKey<FormState>();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.lock_reset, color: Colors.orange),
-            SizedBox(width: 8),
-            Text('Quên mật khẩu', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Form(
-          key: forgotFormKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Nhập email tài khoản của bạn để nhận liên kết khôi phục mật khẩu:',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: resetEmailController,
-                keyboardType: TextInputType.emailAddress,
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Vui lòng nhập email';
-                  final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-                  if (!emailRegex.hasMatch(val.trim())) return 'Email không đúng định dạng';
-                  return null;
-                },
-                decoration: InputDecoration(
-                  hintText: 'vidu@gmail.com',
-                  prefixIcon: const Icon(Icons.email_outlined, color: Colors.grey),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-          ElevatedButton(
-            onPressed: () async {
-              if (!forgotFormKey.currentState!.validate()) return;
-              final targetEmail = resetEmailController.text.trim();
-              Navigator.pop(ctx);
-
-              try {
-                await FirebaseAuth.instance.sendPasswordResetEmail(email: targetEmail);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Đã gửi email khôi phục tới $targetEmail!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } on FirebaseAuthException catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Lỗi: ${e.message}'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
-            child: const Text('Gửi email'),
-          ),
-        ],
-      ),
+    ForgotPasswordDialog.show(
+      context,
+      initialEmail: _emailController.text.trim(),
     );
   }
 

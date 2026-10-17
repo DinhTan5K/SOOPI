@@ -3,10 +3,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Soopi.Backend.Models.DTOs;
 using Soopi.Backend.Services;
+using SoopiFoodBE.Services;
 
 namespace Soopi.Backend.Controllers
 {
-    [ApiController]
+    [ApiController, Authorize, ManagementAccess(create: true)]
     [Route("api/[controller]")]
     public class UserController : ControllerBase
     {
@@ -24,44 +25,10 @@ namespace Soopi.Backend.Controllers
         /// </summary>
         private (string uid, string email, string? name, string? photo) GetUserClaims()
         {
-            var uid = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                   ?? User.FindFirst("user_id")?.Value
-                   ?? User.FindFirst("sub")?.Value;
-
-            var email = User.FindFirst(ClaimTypes.Email)?.Value
-                     ?? User.FindFirst("email")?.Value;
-
-            var name = User.FindFirst("name")?.Value
-                    ?? User.FindFirst(ClaimTypes.Name)?.Value;
-
-            var photo = User.FindFirst("picture")?.Value;
-
-            if (string.IsNullOrEmpty(uid) && Request.Headers.TryGetValue("X-Firebase-Uid", out var fUid))
-            {
-                uid = fUid.ToString();
-            }
-
-            if (Request.Headers.TryGetValue("X-Firebase-Email", out var fEmail) && !string.IsNullOrEmpty(fEmail))
-            {
-                email = fEmail.ToString();
-            }
-
-            if (Request.Headers.TryGetValue("X-Firebase-Name", out var fName) && !string.IsNullOrEmpty(fName))
-            {
-                name = Uri.UnescapeDataString(fName.ToString());
-            }
-
-            // Hỗ trợ Swagger test nhanh khi chưa đăng nhập Firebase (nếu có header X-Dev-Uid)
-            if (string.IsNullOrEmpty(uid) && Request.Headers.TryGetValue("X-Dev-Uid", out var devUid))
-            {
-                uid = devUid.ToString();
-                email ??= $"{uid}@soopi.vn";
-                name ??= "Developer Test";
-            }
-
-            return (uid ?? string.Empty, email ?? "user@soopi.vn", name, photo);
+            var uid = User.FindFirst("user_id")?.Value ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+            var email = User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value;
+            return (uid ?? string.Empty, email ?? string.Empty, User.FindFirst("name")?.Value, User.FindFirst("picture")?.Value);
         }
-
         /// <summary>
         /// GET /api/user/profile - Lấy thông tin hồ sơ người dùng
         /// </summary>

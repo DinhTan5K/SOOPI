@@ -1,7 +1,9 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+
 import '../models/user_profile.dart';
 import '../models/user_address.dart';
 
@@ -196,7 +198,8 @@ class ProfileApiService {
           label: 'Nhà riêng',
           recipientName: _localProfileCache?.fullName ?? 'Nguyễn Văn A',
           phoneNumber: _localProfileCache?.phoneNumber ?? '0987654321',
-          fullAddress: 'Số 123 Đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội',
+          fullAddress:
+              'Số 123 Đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội',
           note: 'Bấm chuông tầng 2',
           isDefault: true,
         ),
@@ -245,7 +248,9 @@ class ProfileApiService {
 
     if (newAddr.isDefault) {
       for (int i = 0; i < _localAddressesCache.length; i++) {
-        _localAddressesCache[i] = _localAddressesCache[i].copyWith(isDefault: false);
+        _localAddressesCache[i] = _localAddressesCache[i].copyWith(
+          isDefault: false,
+        );
       }
     } else if (_localAddressesCache.isEmpty) {
       newAddr = newAddr.copyWith(isDefault: true);
@@ -277,11 +282,15 @@ class ProfileApiService {
     }
 
     // Local fallback
-    final index = _localAddressesCache.indexWhere((element) => element.id == address.id);
+    final index = _localAddressesCache.indexWhere(
+      (element) => element.id == address.id,
+    );
     if (index != -1) {
       if (address.isDefault) {
         for (int i = 0; i < _localAddressesCache.length; i++) {
-          _localAddressesCache[i] = _localAddressesCache[i].copyWith(isDefault: false);
+          _localAddressesCache[i] = _localAddressesCache[i].copyWith(
+            isDefault: false,
+          );
         }
       }
       _localAddressesCache[index] = address;
@@ -305,8 +314,11 @@ class ProfileApiService {
     }
 
     _localAddressesCache.removeWhere((element) => element.id == id);
-    if (_localAddressesCache.isNotEmpty && !_localAddressesCache.any((element) => element.isDefault)) {
-      _localAddressesCache[0] = _localAddressesCache[0].copyWith(isDefault: true);
+    if (_localAddressesCache.isNotEmpty &&
+        !_localAddressesCache.any((element) => element.isDefault)) {
+      _localAddressesCache[0] = _localAddressesCache[0].copyWith(
+        isDefault: true,
+      );
     }
   }
 
@@ -315,7 +327,10 @@ class ProfileApiService {
     try {
       final headers = await _getHeaders();
       final response = await http
-          .patch(Uri.parse('$baseUrl/user/addresses/$id/set-default'), headers: headers)
+          .patch(
+            Uri.parse('$baseUrl/user/addresses/$id/set-default'),
+            headers: headers,
+          )
           .timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {

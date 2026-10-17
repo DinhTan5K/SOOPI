@@ -24,23 +24,6 @@ namespace Soopi.Backend.Services
 
             if (user == null)
             {
-                // Thử tìm theo email nếu đã có
-                user = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
-                if (user != null)
-                {
-                    user.FirebaseUid = firebaseUid;
-                    if (!string.IsNullOrEmpty(displayName) && string.IsNullOrEmpty(user.FullName))
-                    {
-                        user.FullName = displayName;
-                    }
-                    if (!string.IsNullOrEmpty(photoUrl))
-                    {
-                        user.AvatarUrl = photoUrl;
-                    }
-                    user.UpdatedAt = DateTimeOffset.UtcNow;
-                    await _db.SaveChangesAsync();
-                }
-                else
                 {
                     user = new AppUser
                     {
