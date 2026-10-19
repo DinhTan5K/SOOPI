@@ -22,6 +22,7 @@ class ProfileApiService {
   static const List<String> candidateBaseUrls = [
     'http://127.0.0.1:5000/api',
     'http://localhost:5000/api',
+    'http://192.168.1.5:5000/api',
     'http://192.168.1.42:5000/api',
     'http://10.0.2.2:5000/api',
   ];

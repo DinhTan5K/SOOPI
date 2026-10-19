@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'services/api_service.dart';
 import 'order/order_data.dart' as order_data;
 import 'order/order_tracking_screen.dart';
@@ -8,12 +11,14 @@ class RestaurantDetailScreen extends StatefulWidget {
   final ApiRestaurant restaurant;
   final double? userLat;
   final double? userLng;
+  final String? userAddress;
 
   const RestaurantDetailScreen({
     super.key,
     required this.restaurant,
     this.userLat,
     this.userLng,
+    this.userAddress,
   });
 
   @override
@@ -31,10 +36,51 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
 
   final ScrollController _menuScrollController = ScrollController();
 
+  String? _deliveryAddress;
+  double? _deliveryLat;
+  double? _deliveryLng;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _deliveryAddress = widget.userAddress;
+    _deliveryLat = widget.userLat;
+    _deliveryLng = widget.userLng;
+    _loadSavedAddressFallback();
+  }
+
+  Future<void> _loadSavedAddressFallback() async {
+    if (_deliveryAddress != null && _deliveryLat != null && _deliveryLat != 0) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      String? raw = prefs.getString('soopi.delivery_address.$uid');
+      if (raw == null) {
+        for (final k in prefs.getKeys()) {
+          if (k.startsWith('soopi.delivery_address.')) {
+            final val = prefs.getString(k);
+            if (val != null && val.isNotEmpty) {
+              raw = val;
+              break;
+            }
+          }
+        }
+      }
+      if (raw != null) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        final lat = (map['latitude'] as num?)?.toDouble();
+        final lng = (map['longitude'] as num?)?.toDouble();
+        final addr = map['address']?.toString();
+        if (mounted) {
+          setState(() {
+            _deliveryAddress ??= addr;
+            _deliveryLat ??= lat;
+            _deliveryLng ??= lng;
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -1088,6 +1134,22 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
               subtitle: Text(widget.restaurant.address, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             const Divider(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.location_on, color: Colors.green),
+              ),
+              title: const Text('Giao đến vị trí của bạn:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
+              subtitle: Text(
+                _deliveryAddress ?? widget.userAddress ?? 'Chưa chọn địa chỉ giao hàng',
+                style: const TextStyle(fontSize: 12, color: Colors.black87),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Divider(),
             const Text('Món đã chọn:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
             const SizedBox(height: 6),
             ConstrainedBox(
@@ -1140,13 +1202,22 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () {
+                final finalAddr = _deliveryAddress ?? widget.userAddress ?? 'Địa chỉ nhận hàng của bạn';
+                final finalLat = _deliveryLat ?? widget.userLat;
+                final finalLng = _deliveryLng ?? widget.userLng;
+
                 final newOrder = order_data.OrderData().createOrder(
+                  restaurantId: widget.restaurant.id,
                   restaurantName: widget.restaurant.name,
                   restaurantAddress: widget.restaurant.address,
                   items: selectedOrderItems,
-                  deliveryAddress: 'Địa chỉ nhận hàng của bạn',
+                  deliveryAddress: finalAddr,
                   paymentMethod: paymentMethod,
                   deliveryFee: deliveryFee,
+                  restaurantLat: widget.restaurant.latitude,
+                  restaurantLng: widget.restaurant.longitude,
+                  userLat: finalLat,
+                  userLng: finalLng,
                 );
 
                 setState(() {

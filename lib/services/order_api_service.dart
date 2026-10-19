@@ -106,9 +106,64 @@ class OrderApiService {
     }
   }
 
+  /// Tạo đơn hàng trực tiếp và lưu vào PostgreSQL (POST /api/users/{userId}/orders/direct)
+  Future<OrderModel?> createDirectOrder({
+    String? restaurantId,
+    required String restaurantName,
+    String? restaurantAddress,
+    required String deliveryAddress,
+    required String paymentMethod,
+    required int deliveryFee,
+    String? note,
+    double? userLat,
+    double? userLng,
+    double? restaurantLat,
+    double? restaurantLng,
+    required List<OrderItem> items,
+  }) async {
+    final userId = await _getUserId();
+    if (userId == null || userId.isEmpty) return null;
+
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$_baseUrl/users/$userId/orders/direct');
+
+    final body = jsonEncode({
+      'restaurantId': restaurantId != null && restaurantId.length >= 32 ? restaurantId : null,
+      'restaurantName': restaurantName,
+      'restaurantAddress': restaurantAddress,
+      'deliveryAddress': deliveryAddress,
+      'paymentMethod': paymentMethod,
+      'deliveryFee': deliveryFee,
+      'note': note ?? '',
+      'userLat': userLat,
+      'userLng': userLng,
+      'restaurantLat': restaurantLat,
+      'restaurantLng': restaurantLng,
+      'items': items.map((i) => {
+        'menuItemId': i.id.length >= 32 ? i.id : null,
+        'name': i.name,
+        'price': i.price,
+        'quantity': i.quantity,
+        'note': i.note,
+      }).toList(),
+    });
+
+    try {
+      final response = await http.post(uri, headers: headers, body: body).timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        return _mapJsonToOrder(data);
+      } else {
+        debugPrint('OrderApiService.createDirectOrder failed: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('OrderApiService.createDirectOrder error: $e');
+    }
+    return null;
+  }
+
   /// Helper map dữ liệu JSON trả về từ Backend .NET sang OrderModel của Flutter
   OrderModel _mapJsonToOrder(Map<String, dynamic> json) {
-    final orderId = json['id']?.toString() ?? json['orderCode']?.toString() ?? 'SP-0000';
     final restaurant = json['restaurant'] as Map<String, dynamic>?;
     final restaurantName = restaurant?['name']?.toString() ?? 'Nhà hàng SOOPI';
     final restaurantAddress = restaurant?['address']?.toString() ?? 'Hà Nội';
@@ -162,11 +217,19 @@ class OrderApiService {
       );
     }
 
+    final rawId = json['id']?.toString();
+    final rawOrderCode = json['orderCode']?.toString();
+    final orderId = (rawOrderCode != null && rawOrderCode.isNotEmpty)
+        ? rawOrderCode
+        : (rawId ?? 'SP-0000');
+
     final createdAtStr = json['createdAt']?.toString();
     final createdAt = createdAtStr != null ? DateTime.tryParse(createdAtStr) ?? DateTime.now() : DateTime.now();
 
     return OrderModel(
       id: orderId,
+      backendId: rawId,
+      orderCode: rawOrderCode,
       restaurantName: restaurantName,
       restaurantAddress: restaurantAddress,
       restaurantEmoji: '🏪',

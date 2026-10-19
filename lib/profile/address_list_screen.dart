@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_address.dart';
 import '../services/profile_api_service.dart';
+import '../services/geocoding_service.dart';
 import 'add_edit_address_screen.dart';
 
 class AddressListScreen extends StatefulWidget {
@@ -39,6 +43,20 @@ class _AddressListScreenState extends State<AddressListScreen> {
   Future<void> _setDefaultAddress(UserAddress address) async {
     try {
       await _apiService.setDefaultAddress(address.id);
+      try {
+        final coords = await GeocodingService.getCoordinatesFromAddress(address.fullAddress);
+        final prefs = await SharedPreferences.getInstance();
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+        await prefs.setString(
+          'soopi.delivery_address.$uid',
+          jsonEncode({
+            'address': address.fullAddress,
+            'type': address.label,
+            'latitude': coords?.latitude ?? 10.77689,
+            'longitude': coords?.longitude ?? 106.70089,
+          }),
+        );
+      } catch (_) {}
       await _loadAddresses();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

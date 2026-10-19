@@ -119,7 +119,7 @@ ON CONFLICT (id) DO NOTHING;
 -- ============================================================================
 -- 3. BẢNG "Restaurants" (Danh sách quán ăn / nhà hàng)
 -- ============================================================================
-INSERT INTO "Restaurants" ("Id", "OwnerId", "Name", "Description", "Phone", "Address", "City", "ImageUrl", "Latitude", "Longitude", "AverageRating", "ReviewCount", "TotalOrders", "IsActive", "IsAcceptingOrders", "ApprovalStatus", "IsLocked")
+INSERT INTO "Restaurants" ("Id", "OwnerId", "Name", "Description", "Phone", "Address", "City", "ImageUrl", "Latitude", "Longitude", "AverageRating", "ReviewCount", "TotalOrders", "IsActive", "IsAcceptingOrders")
 VALUES
     -- 1. Burger
     (
@@ -714,7 +714,7 @@ WHERE u.role = 'Customer' AND u.id NOT IN ('33333333-0000-0000-0000-000000000001
 ON CONFLICT ("UserId", "RestaurantId") DO NOTHING;
 
 COMMIT;
-``
+
 -- ============================================================================
 -- HOÀN TẤT NẠP DỮ LIỆU SEED!
 -- Các bảng Order (Orders, OrderItems, OrderStatusHistory, Payments, 

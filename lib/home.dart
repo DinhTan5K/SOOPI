@@ -11,6 +11,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'services/api_service.dart';
+import 'services/geocoding_service.dart';
+import 'services/profile_api_service.dart';
+import 'models/user_address.dart';
 import 'restaurant_detail_screen.dart';
 
 class DeliveryLocationOption {
@@ -291,6 +294,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
+      debugPrint('Lỗi tải danh sách nhà hàng: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -547,7 +551,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _showAddressSelectionSheet() async {
-    final action = await showModalBottomSheet<_AddressSheetAction>(
+    List<UserAddress> profileAddresses = [];
+    try {
+      profileAddresses = await ProfileApiService().getAddresses();
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    final result = await showModalBottomSheet<dynamic>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -611,20 +622,54 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.pop(ctx, _AddressSheetAction.customInput);
               },
-              icon: const Icon(Icons.edit_note, color: Colors.orange),
+              icon: const Icon(Icons.search, color: Colors.orange),
               label: const Text(
-                'Tìm và nhập địa chỉ giao hàng',
+                'Tìm kiếm & Nhập bất kì địa chỉ nào',
                 style: TextStyle(
                   color: Colors.orange,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ),
+
+            if (profileAddresses.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Địa chỉ đã lưu trong hồ sơ',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 180),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: profileAddresses.length,
+                  separatorBuilder: (_, _) => const Divider(height: 8),
+                  itemBuilder: (_, idx) {
+                    final addr = profileAddresses[idx];
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        addr.label == 'Văn phòng'
+                            ? Icons.business
+                            : (addr.label == 'Nhà riêng' ? Icons.home : Icons.place),
+                        color: Colors.orange,
+                      ),
+                      title: Text(addr.label, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(addr.fullAddress, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                      onTap: () => Navigator.pop(ctx, addr),
+                    );
+                  },
+                ),
+              ),
+            ],
+
             const SizedBox(height: 16),
             if (_selectedAddressName != 'Chưa chọn địa chỉ giao hàng')
               ListTile(
-                leading: const Icon(Icons.place, color: Colors.orange),
-                title: Text(_selectedAddressType),
+                leading: const Icon(Icons.check_circle, color: Colors.green),
+                title: Text('Đang chọn: $_selectedAddressType', style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text(
                   _selectedAddressName,
                   maxLines: 2,
@@ -637,11 +682,27 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
 
-    if (!mounted || action == null) return;
-    if (action == _AddressSheetAction.gps) {
+    if (!mounted || result == null) return;
+    if (result == _AddressSheetAction.gps) {
       _getRealDeviceGpsPosition();
-    } else if (action == _AddressSheetAction.customInput) {
+    } else if (result == _AddressSheetAction.customInput) {
       _showCustomAddressInputDialog();
+    } else if (result is UserAddress) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đang định vị địa chỉ đã lưu...'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      final coords = await GeocodingService.getCoordinatesFromAddress(result.fullAddress);
+      if (coords != null && mounted) {
+        _changeDeliveryAddress(DeliveryLocationOption(
+          label: result.label,
+          address: result.fullAddress,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        ));
+      }
     }
   }
 
@@ -1233,6 +1294,7 @@ class _HomeScreenState extends State<HomeScreen> {
               restaurant: restaurant,
               userLat: _selectedLat != 0 ? _selectedLat : null,
               userLng: _selectedLng != 0 ? _selectedLng : null,
+              userAddress: _selectedAddressName != 'Chưa chọn địa chỉ giao hàng' ? _selectedAddressName : null,
             ),
           ),
         );
@@ -1580,17 +1642,56 @@ class _AddressInputDialogState extends State<_AddressInputDialog> {
     });
   }
 
-  void _submit() {
-    if (_selectedSuggestion == null) return;
+  Future<void> _submit() async {
     _focusNode.unfocus();
     FocusManager.instance.primaryFocus?.unfocus();
-    final option = DeliveryLocationOption(
-      label: _selectedType,
-      address: _selectedSuggestion!.displayName,
-      latitude: _selectedSuggestion!.latitude,
-      longitude: _selectedSuggestion!.longitude,
-    );
-    Navigator.pop(context, option);
+
+    if (_selectedSuggestion != null) {
+      final option = DeliveryLocationOption(
+        label: _selectedType,
+        address: _selectedSuggestion!.displayName,
+        latitude: _selectedSuggestion!.latitude,
+        longitude: _selectedSuggestion!.longitude,
+      );
+      Navigator.pop(context, option);
+      return;
+    }
+
+    if (_suggestions.isNotEmpty) {
+      final first = _suggestions.first;
+      final option = DeliveryLocationOption(
+        label: _selectedType,
+        address: first.displayName,
+        latitude: first.latitude,
+        longitude: first.longitude,
+      );
+      Navigator.pop(context, option);
+      return;
+    }
+
+    final query = _addressController.text.trim();
+    if (query.isNotEmpty) {
+      setState(() => _searching = true);
+      try {
+        final coords = await GeocodingService.getCoordinatesFromAddress(query);
+        if (coords != null && mounted) {
+          final option = DeliveryLocationOption(
+            label: _selectedType,
+            address: query,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          );
+          Navigator.pop(context, option);
+          return;
+        }
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _searching = false;
+          _searchError = 'Không tìm thấy tọa độ cho địa chỉ này trên bản đồ.';
+        });
+      }
+    }
   }
 
   void _cancel() {

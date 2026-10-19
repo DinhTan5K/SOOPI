@@ -119,6 +119,8 @@ class ReviewModel {
 
 class OrderModel {
   final String id;
+  final String? backendId;
+  final String? orderCode;
   final String restaurantName;
   final String restaurantAddress;
   final String restaurantEmoji;
@@ -132,9 +134,15 @@ class OrderModel {
   int estimatedDeliveryMinutes;
   final ShipperInfo? shipper;
   ReviewModel? review;
+  final double? restaurantLat;
+  final double? restaurantLng;
+  final double? userLat;
+  final double? userLng;
 
   OrderModel({
     required this.id,
+    this.backendId,
+    this.orderCode,
     required this.restaurantName,
     required this.restaurantAddress,
     this.restaurantEmoji = '🏪',
@@ -148,6 +156,10 @@ class OrderModel {
     this.estimatedDeliveryMinutes = 15,
     this.shipper,
     this.review,
+    this.restaurantLat,
+    this.restaurantLng,
+    this.userLat,
+    this.userLng,
   });
 
   int get subtotal => items.fold(0, (sum, item) => sum + (item.price * item.quantity));
@@ -167,7 +179,7 @@ class OrderData extends ChangeNotifier {
   factory OrderData() => _instance;
 
   OrderData._internal() {
-    _initSampleData();
+    refreshFromApi();
   }
 
   final List<OrderModel> _orders = [];
@@ -183,11 +195,9 @@ class OrderData extends ChangeNotifier {
     notifyListeners();
     try {
       final remoteOrders = await OrderApiService().fetchOrders();
-      if (remoteOrders.isNotEmpty) {
-        _orders.clear();
-        _orders.addAll(remoteOrders);
-        isFromBackend = true;
-      }
+      _orders.clear();
+      _orders.addAll(remoteOrders);
+      isFromBackend = true;
     } catch (e) {
       debugPrint('OrderData: Chưa kết nối được BE ($e), tiếp tục dùng dữ liệu local');
     } finally {
@@ -212,169 +222,19 @@ class OrderData extends ChangeNotifier {
   }
 
   OrderModel? findById(String id) {
+    final q = id.trim().toLowerCase();
     try {
-      return _orders.firstWhere((o) => o.id == id);
+      return _orders.firstWhere(
+        (o) =>
+            o.id.toLowerCase() == q ||
+            (o.backendId != null && o.backendId!.toLowerCase() == q) ||
+            (o.orderCode != null && o.orderCode!.toLowerCase() == q) ||
+            o.id.toLowerCase().contains(q) ||
+            (o.backendId != null && o.backendId!.toLowerCase().contains(q)),
+      );
     } catch (_) {
       return null;
     }
-  }
-
-  void _initSampleData() {
-    _orders.add(
-      OrderModel(
-        id: 'SP-8839',
-        restaurantName: 'Soopi Burger Fastfood',
-        restaurantAddress: 'Số 12 Ngõ 84 Trần Thái Tông, Cầu Giấy',
-        restaurantEmoji: '🍔',
-        status: OrderStatus.delivering,
-        createdAt: DateTime.now().subtract(const Duration(minutes: 18)),
-        estimatedDeliveryMinutes: 10,
-        deliveryAddress: 'Phòng 402, Tòa FPT Tower, Số 10 Phạm Văn Bạch',
-        paymentMethod: 'Tiền mặt khi nhận hàng (COD)',
-        deliveryFee: 15000,
-        discount: 10000,
-        shipper: ShipperInfo(
-          name: 'Nguyễn Văn Hùng',
-          phone: '0987.654.321',
-          rating: 4.9,
-          bikePlate: '29-B1 888.66',
-          bikeType: 'Honda Wave Alpha (Đỏ đen)',
-          avatarUrl: 'https://ui-avatars.com/api/?name=Van+Hung&background=FF8A00&color=fff',
-        ),
-        items: [
-          OrderItem(
-            id: 'burger',
-            name: 'Double Cheese Burger',
-            price: 65000,
-            quantity: 2,
-            emoji: '🍔',
-            note: 'Ít tương ớt, thêm phô mai',
-          ),
-          OrderItem(
-            id: 'fries',
-            name: 'Khoai tây chiên lắc phô mai',
-            price: 30000,
-            quantity: 1,
-            emoji: '🍟',
-          ),
-          OrderItem(
-            id: 'tea',
-            name: 'Trà đào cam sả',
-            price: 35000,
-            quantity: 2,
-            emoji: '🥤',
-            note: 'Ít đường, nhiều đá',
-          ),
-        ],
-      ),
-    );
-
-    _orders.add(
-      OrderModel(
-        id: 'SP-7512',
-        restaurantName: 'Italiano Pizza House',
-        restaurantAddress: '15 Duy Tân, Cầu Giấy, Hà Nội',
-        restaurantEmoji: '🍕',
-        status: OrderStatus.completed,
-        createdAt: DateTime.now().subtract(const Duration(days: 1, hours: 2)),
-        deliveryAddress: 'Phòng 402, Tòa FPT Tower, Số 10 Phạm Văn Bạch',
-        paymentMethod: 'Thẻ ngân hàng / Ví điện tử',
-        deliveryFee: 18000,
-        discount: 15000,
-        shipper: ShipperInfo(
-          name: 'Trần Minh Quân',
-          phone: '0912.333.444',
-          rating: 5.0,
-          bikePlate: '29-K2 567.89',
-          bikeType: 'Yamaha Sirius (Xanh)',
-        ),
-        items: [
-          OrderItem(
-            id: 'pizza',
-            name: 'Pepperoni Pizza cỡ vừa',
-            price: 120000,
-            quantity: 1,
-            emoji: '🍕',
-          ),
-          OrderItem(
-            id: 'coke',
-            name: 'Coca Cola tươi',
-            price: 15000,
-            quantity: 2,
-            emoji: '🥤',
-          ),
-        ],
-      ),
-    );
-
-    _orders.add(
-      OrderModel(
-        id: 'SP-6201',
-        restaurantName: 'Tiệm Bánh Mì Chảo Cô Ba',
-        restaurantAddress: '88 Cầu Giấy, Hà Nội',
-        restaurantEmoji: '🍳',
-        status: OrderStatus.completed,
-        createdAt: DateTime.now().subtract(const Duration(days: 3)),
-        deliveryAddress: 'Số 22 ngõ 165 Cầu Giấy',
-        paymentMethod: 'Tiền mặt khi nhận hàng (COD)',
-        deliveryFee: 15000,
-        discount: 0,
-        shipper: ShipperInfo(
-          name: 'Lê Hoàng Long',
-          phone: '0904.555.666',
-          rating: 4.8,
-          bikePlate: '29-P1 321.45',
-          bikeType: 'Honda Vision',
-        ),
-        items: [
-          OrderItem(
-            id: 'banhmi',
-            name: 'Bánh mì chảo đặc biệt xúc xích pate',
-            price: 55000,
-            quantity: 2,
-            emoji: '🥖',
-          ),
-          OrderItem(
-            id: 'soymilk',
-            name: 'Sữa đậu nành nguyên chất',
-            price: 12000,
-            quantity: 2,
-            emoji: '🥛',
-          ),
-        ],
-        review: ReviewModel(
-          restaurantRating: 5,
-          restaurantTags: ['Món nóng hổi', 'Hương vị đậm đà', 'Đóng gói cẩn thận'],
-          restaurantComment: 'Bánh mì rất giòn, pate béo thơm tuyệt vời!',
-          shipperRating: 5,
-          shipperTags: ['Giao hàng nhanh', 'Thân thiện, lịch sự'],
-          shipperComment: 'Shipper đến sớm và rất nhiệt tình.',
-          tipAmount: 10000,
-          createdAt: DateTime.now().subtract(const Duration(days: 3)),
-        ),
-      ),
-    );
-
-    _orders.add(
-      OrderModel(
-        id: 'SP-4820',
-        restaurantName: 'Bún Chả Hà Nội Xưa',
-        restaurantAddress: '102 Nguyễn Khánh Toàn, Cầu Giấy',
-        restaurantEmoji: '🍲',
-        status: OrderStatus.cancelled,
-        createdAt: DateTime.now().subtract(const Duration(days: 7)),
-        deliveryAddress: 'Phòng 402, Tòa FPT Tower',
-        items: [
-          OrderItem(
-            id: 'buncha',
-            name: 'Bún chả que tre đặc biệt',
-            price: 60000,
-            quantity: 1,
-            emoji: '🍲',
-          ),
-        ],
-      ),
-    );
   }
 
   void advanceOrderStatus(String orderId) {
@@ -392,6 +252,100 @@ class OrderData extends ChangeNotifier {
       order.estimatedDeliveryMinutes = 0;
     }
     notifyListeners();
+  }
+
+  OrderModel createOrder({
+    String? restaurantId,
+    required String restaurantName,
+    required String restaurantAddress,
+    required List<OrderItem> items,
+    required String deliveryAddress,
+    required String paymentMethod,
+    required int deliveryFee,
+    String restaurantEmoji = '🏪',
+    int discount = 0,
+    double? restaurantLat,
+    double? restaurantLng,
+    double? userLat,
+    double? userLng,
+  }) {
+    final tempId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
+    final newOrder = OrderModel(
+      id: tempId,
+      restaurantName: restaurantName,
+      restaurantAddress: restaurantAddress,
+      restaurantEmoji: restaurantEmoji,
+      items: List.from(items),
+      deliveryFee: deliveryFee,
+      discount: discount,
+      paymentMethod: paymentMethod,
+      deliveryAddress: deliveryAddress,
+      status: OrderStatus.preparing,
+      createdAt: DateTime.now(),
+      estimatedDeliveryMinutes: 25,
+      restaurantLat: restaurantLat,
+      restaurantLng: restaurantLng,
+      userLat: userLat,
+      userLng: userLng,
+      shipper: ShipperInfo(
+        name: 'Nguyễn Văn Hùng',
+        phone: '0987.654.321',
+        rating: 4.9,
+        bikePlate: '29-B1 888.66',
+        bikeType: 'Honda Wave Alpha',
+      ),
+    );
+
+    _orders.insert(0, newOrder);
+    notifyListeners();
+
+    OrderApiService().createDirectOrder(
+      restaurantId: restaurantId,
+      restaurantName: restaurantName,
+      restaurantAddress: restaurantAddress,
+      deliveryAddress: deliveryAddress,
+      paymentMethod: paymentMethod,
+      deliveryFee: deliveryFee,
+      userLat: userLat,
+      userLng: userLng,
+      restaurantLat: restaurantLat,
+      restaurantLng: restaurantLng,
+      items: items,
+    ).then((savedOrder) {
+      if (savedOrder != null) {
+        final idx = _orders.indexWhere((o) => o.id == tempId);
+        if (idx != -1) {
+          // Lưu dữ liệu thật từ DB đồng thời giữ tempId để màn hình theo dõi không bị mất
+          _orders[idx] = OrderModel(
+            id: tempId,
+            backendId: savedOrder.backendId ?? savedOrder.id,
+            orderCode: savedOrder.orderCode ?? tempId,
+            restaurantName: savedOrder.restaurantName,
+            restaurantAddress: savedOrder.restaurantAddress,
+            restaurantEmoji: savedOrder.restaurantEmoji,
+            items: savedOrder.items,
+            deliveryFee: savedOrder.deliveryFee,
+            discount: savedOrder.discount,
+            paymentMethod: savedOrder.paymentMethod,
+            deliveryAddress: savedOrder.deliveryAddress,
+            status: savedOrder.status,
+            createdAt: savedOrder.createdAt,
+            estimatedDeliveryMinutes: savedOrder.estimatedDeliveryMinutes,
+            shipper: savedOrder.shipper,
+            review: savedOrder.review,
+            restaurantLat: savedOrder.restaurantLat,
+            restaurantLng: savedOrder.restaurantLng,
+            userLat: savedOrder.userLat,
+            userLng: savedOrder.userLng,
+          );
+          notifyListeners();
+        }
+      }
+    }).catchError((e) {
+      debugPrint('Lỗi lưu đơn hàng vào DB: $e');
+    });
+
+    return newOrder;
   }
 
   OrderModel reorder(OrderModel oldOrder) {

@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_address.dart';
 import '../services/profile_api_service.dart';
+import '../services/geocoding_service.dart';
 
 class AddEditAddressScreen extends StatefulWidget {
   final UserAddress? addressToEdit;
@@ -54,6 +58,8 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
 
     try {
       final apiService = ProfileApiService();
+      final addressQuery = _addressController.text.trim();
+
       if (widget.addressToEdit == null) {
         // Tạo mới
         final newAddress = UserAddress(
@@ -62,7 +68,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           label: _selectedLabel,
           recipientName: _nameController.text.trim(),
           phoneNumber: _phoneController.text.trim(),
-          fullAddress: _addressController.text.trim(),
+          fullAddress: addressQuery,
           note: _noteController.text.trim(),
           isDefault: _isDefault,
         );
@@ -73,11 +79,29 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           label: _selectedLabel,
           recipientName: _nameController.text.trim(),
           phoneNumber: _phoneController.text.trim(),
-          fullAddress: _addressController.text.trim(),
+          fullAddress: addressQuery,
           note: _noteController.text.trim(),
           isDefault: _isDefault,
         );
         await apiService.updateAddress(updated);
+      }
+
+      // Tự động định vị và lưu vào SharedPreferences nếu đây là địa chỉ mặc định
+      if (_isDefault) {
+        try {
+          final coords = await GeocodingService.getCoordinatesFromAddress(addressQuery);
+          final prefs = await SharedPreferences.getInstance();
+          final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+          await prefs.setString(
+            'soopi.delivery_address.$uid',
+            jsonEncode({
+              'address': addressQuery,
+              'type': _selectedLabel,
+              'latitude': coords?.latitude ?? 10.77689,
+              'longitude': coords?.longitude ?? 106.70089,
+            }),
+          );
+        } catch (_) {}
       }
 
       if (mounted) {

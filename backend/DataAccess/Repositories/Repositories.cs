@@ -196,6 +196,9 @@ public sealed class OrderRepository(SoopiDbContext db) : IOrderRepository
     public Task<List<FoodOrder>> HistoryAsync(Guid userId, CancellationToken ct) =>
         db.Orders
             .Where(order => order.CustomerId == userId)
+            .Include(order => order.Items)
+            .Include(order => order.Restaurant)
+            .Include(order => order.Shipper)
             .OrderByDescending(order => order.CreatedAt)
             .AsNoTracking()
             .ToListAsync(ct);

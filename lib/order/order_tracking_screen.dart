@@ -1,6 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'order_data.dart';
 import 'order_review_screen.dart';
+import '../services/geocoding_service.dart';
+import '../services/profile_api_service.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -14,28 +21,152 @@ class OrderTrackingScreen extends StatefulWidget {
 class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     with SingleTickerProviderStateMixin {
   final OrderData _orderData = OrderData();
+  final MapController _mapController = MapController();
 
   late AnimationController _animController;
   late Animation<double> _shipperProgress;
 
+  LatLng? _savedUserPos;
+  String? _savedUserAddress;
+
   @override
   void initState() {
     super.initState();
+    _loadSavedUserLocation();
+
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    _shipperProgress = Tween<double>(begin: 0.35, end: 0.70).animate(
+    _shipperProgress = Tween<double>(begin: 0.15, end: 0.85).animate(
       CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
     );
 
     _orderData.syncTrack(widget.orderId);
   }
 
+  Future<void> _loadSavedUserLocation() async {
+    try {
+      final order = _orderData.findById(widget.orderId);
+
+      // 1. Nếu đơn hàng đã lưu sẵn tọa độ người dùng cụ thể
+      if (order != null && order.userLat != null && order.userLng != null && order.userLat != 0) {
+        if (mounted) {
+          setState(() {
+            _savedUserPos = LatLng(order.userLat!, order.userLng!);
+            _savedUserAddress = order.deliveryAddress;
+          });
+          _recenterMap();
+        }
+        return;
+      }
+
+      // 2. Nếu đơn hàng có chuỗi địa chỉ giao hàng cụ thể, geocode ngay thành tọa độ
+      if (order != null &&
+          order.deliveryAddress.trim().isNotEmpty &&
+          !order.deliveryAddress.startsWith('Địa chỉ')) {
+        final query = order.deliveryAddress.trim();
+        _savedUserAddress = query;
+        final coords = await GeocodingService.getCoordinatesFromAddress(query);
+        if (coords != null && mounted) {
+          setState(() {
+            _savedUserPos = coords;
+          });
+          _recenterMap();
+          return;
+        }
+      }
+
+      // 3. Đọc địa chỉ đã lưu trong SharedPreferences (quét tất cả các key soopi.delivery_address)
+      final prefs = await SharedPreferences.getInstance();
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      String? raw = prefs.getString('soopi.delivery_address.$uid');
+
+      if (raw == null) {
+        for (final key in prefs.getKeys()) {
+          if (key.startsWith('soopi.delivery_address.')) {
+            final val = prefs.getString(key);
+            if (val != null && val.isNotEmpty) {
+              raw = val;
+              break;
+            }
+          }
+        }
+      }
+
+      if (raw != null) {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        final lat = (map['latitude'] as num?)?.toDouble();
+        final lng = (map['longitude'] as num?)?.toDouble();
+        final addr = map['address']?.toString();
+
+        if (lat != null && lng != null && lat != 0 && lng != 0 && mounted) {
+          setState(() {
+            _savedUserPos = LatLng(lat, lng);
+            _savedUserAddress = addr;
+          });
+          _recenterMap();
+          return;
+        } else if (addr != null && addr.isNotEmpty) {
+          final coords = await GeocodingService.getCoordinatesFromAddress(addr);
+          if (coords != null && mounted) {
+            setState(() {
+              _savedUserPos = coords;
+              _savedUserAddress = addr;
+            });
+            _recenterMap();
+            return;
+          }
+        }
+      }
+
+      // 4. Kiểm tra địa chỉ mặc định từ hồ sơ tài khoản (Backend database)
+      try {
+        final profileAddresses = await ProfileApiService().getAddresses();
+        if (profileAddresses.isNotEmpty) {
+          final def = profileAddresses.firstWhere((a) => a.isDefault, orElse: () => profileAddresses.first);
+          if (def.fullAddress.trim().isNotEmpty) {
+            final coords = await GeocodingService.getCoordinatesFromAddress(def.fullAddress.trim());
+            if (coords != null && mounted) {
+              setState(() {
+                _savedUserPos = coords;
+                _savedUserAddress = def.fullAddress;
+              });
+              _recenterMap();
+              return;
+            }
+          }
+        }
+      } catch (_) {}
+    } catch (e) {
+      debugPrint('Error loading saved delivery address: $e');
+    }
+  }
+
+  void _recenterMap() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _savedUserPos != null) {
+        final order = _orderData.findById(widget.orderId);
+        if (order != null) {
+          final uPos = _savedUserPos!;
+          final rPos = _getRestaurantCoordinates(order, uPos);
+          final cPos = LatLng(
+            (rPos.latitude + uPos.latitude) / 2,
+            (rPos.longitude + uPos.longitude) / 2,
+          );
+          try {
+            _mapController.move(cPos, 14.5);
+          } catch (_) {}
+        }
+      }
+    });
+  }
+
   @override
   void dispose() {
     _animController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -159,7 +290,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildMockMap(order),
+                _buildRealMap(order),
 
                 const SizedBox(height: 16),
 
@@ -188,73 +319,186 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     );
   }
 
-  Widget _buildMockMap(OrderModel order) {
+  LatLng _getUserCoordinates(OrderModel order) {
+    if (order.userLat != null && order.userLng != null && order.userLat != 0) {
+      return LatLng(order.userLat!, order.userLng!);
+    }
+    if (_savedUserPos != null) {
+      return _savedUserPos!;
+    }
+    return const LatLng(10.77689, 106.70089);
+  }
+
+  LatLng _getRestaurantCoordinates(OrderModel order, LatLng userPos) {
+    if (order.restaurantLat != null && order.restaurantLng != null && order.restaurantLat != 0) {
+      return LatLng(order.restaurantLat!, order.restaurantLng!);
+    }
+
+    // Nếu điểm nhận hàng của người dùng ở ngoài TP.HCM (> 50 km, ví dụ: Bàu Tràm 2 - Đà Nẵng, Hà Nội...)
+    // Tự động đặt quán mẫu gần vị trí đã lưu của user (~1.5 km) để tạo lộ trình giao hàng hợp lý trong cùng khu vực
+    final isFarFromHcm = (userPos.latitude - 10.78).abs() > 0.5 || (userPos.longitude - 106.69).abs() > 0.5;
+    if (isFarFromHcm) {
+      return LatLng(userPos.latitude + 0.010, userPos.longitude + 0.008);
+    }
+
+    final name = order.restaurantName.toLowerCase();
+    if (name.contains('burger')) return const LatLng(10.76985, 106.69650);
+    if (name.contains('pizza')) return const LatLng(10.78342, 106.69532);
+    if (name.contains('sushi')) return const LatLng(10.77258, 106.69345);
+    if (name.contains('phúc long') || name.contains('phuclong')) return const LatLng(10.77312, 106.70425);
+    if (name.contains('cơm') || name.contains('ba ghiền')) return const LatLng(10.79150, 106.67420);
+    if (name.contains('poke') || name.contains('healthy')) return const LatLng(10.77740, 106.70010);
+    return const LatLng(10.78342, 106.69532);
+  }
+
+  List<LatLng> _getRoutePoints(LatLng start, LatLng end) {
+    final midLat = (start.latitude + end.latitude) / 2;
+    final midLng = (start.longitude + end.longitude) / 2;
+    final corner1 = LatLng(start.latitude, midLng);
+    final corner2 = LatLng(midLat, end.longitude);
+    return [start, corner1, corner2, end];
+  }
+
+  LatLng _getInterpolatedShipperPos(List<LatLng> route, double progress) {
+    if (route.isEmpty) return const LatLng(10.78342, 106.69532);
+    if (route.length == 1) return route.first;
+    final totalSegments = route.length - 1;
+    final segIndex = (progress * totalSegments).floor().clamp(0, totalSegments - 1);
+    final segProgress = (progress * totalSegments) - segIndex;
+    final p1 = route[segIndex];
+    final p2 = route[segIndex + 1];
+    return LatLng(
+      p1.latitude + (p2.latitude - p1.latitude) * segProgress,
+      p1.longitude + (p2.longitude - p1.longitude) * segProgress,
+    );
+  }
+
+  Widget _buildMapControlBtn({required IconData icon, required VoidCallback onTap}) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(8),
+      elevation: 3,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: Icon(icon, size: 18, color: Colors.black87),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRealMap(OrderModel order) {
+    final userPos = _getUserCoordinates(order);
+    final restaurantPos = _getRestaurantCoordinates(order, userPos);
+    final routePoints = _getRoutePoints(restaurantPos, userPos);
+
+    final centerLat = (restaurantPos.latitude + userPos.latitude) / 2;
+    final centerLng = (restaurantPos.longitude + userPos.longitude) / 2;
+    final centerPos = LatLng(centerLat, centerLng);
+
     return Container(
-      height: 220,
+      height: 250,
       width: double.infinity,
       decoration: BoxDecoration(
         color: const Color(0xFFF2F4F7),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          Positioned.fill(
-            child: CustomPaint(painter: _MapPainter()),
-          ),
-          Positioned(
-            left: 24,
-            top: 70,
-            child: _buildLocationPin(
-              emoji: '🏪',
-              label: order.restaurantName,
-              color: Colors.deepOrange,
-              sublabel: 'Điểm lấy món',
-            ),
-          ),
-          Positioned(
-            right: 24,
-            bottom: 40,
-            child: _buildLocationPin(
-              emoji: '📍',
-              label: 'Vị trí của bạn',
-              color: Colors.green.shade700,
-              sublabel: 'Điểm nhận hàng',
-            ),
-          ),
-          if (order.status == OrderStatus.delivering)
-            AnimatedBuilder(
-              animation: _shipperProgress,
-              builder: (context, child) {
-                final progress = _shipperProgress.value;
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = constraints.maxWidth;
-                    final height = constraints.maxHeight;
-                    final startX = 60.0;
-                    final startY = 110.0;
-                    final endX = width - 80.0;
-                    final endY = height - 70.0;
+          AnimatedBuilder(
+            animation: _shipperProgress,
+            builder: (context, _) {
+              final progress = order.status == OrderStatus.delivering
+                  ? _shipperProgress.value
+                  : (order.status == OrderStatus.completed ? 1.0 : 0.0);
+              final shipperPos = _getInterpolatedShipperPos(routePoints, progress);
 
-                    final curX = startX + (endX - startX) * progress;
-                    final curY = startY + (endY - startY) * progress;
-
-                    return Positioned(
-                      left: curX - 22,
-                      top: curY - 22,
-                      child: _buildShipperBadge(),
-                    );
-                  },
-                );
-              },
-            )
-          else if (order.status == OrderStatus.preparing)
-            Positioned(
-              left: 65,
-              top: 105,
-              child: _buildShipperBadge(isWaiting: true),
-            ),
+              return FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: centerPos,
+                  initialZoom: 14.5,
+                  minZoom: 10,
+                  maxZoom: 18,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+                  ),
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.example.soopi',
+                  ),
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: routePoints,
+                        color: Colors.orange.shade700,
+                        strokeWidth: 4.5,
+                      ),
+                    ],
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      // Điểm lấy món (Nhà hàng)
+                      Marker(
+                        point: restaurantPos,
+                        width: 140,
+                        height: 75,
+                        alignment: Alignment.topCenter,
+                        child: _buildLocationPin(
+                          emoji: '🏪',
+                          label: order.restaurantName,
+                          color: Colors.deepOrange,
+                          sublabel: 'Điểm lấy món',
+                        ),
+                      ),
+                      // Điểm nhận hàng (Khách hàng)
+                      Marker(
+                        point: userPos,
+                        width: 150,
+                        height: 75,
+                        alignment: Alignment.topCenter,
+                        child: _buildLocationPin(
+                          emoji: '📍',
+                          label: 'Vị trí của bạn',
+                          color: Colors.green.shade700,
+                          sublabel: _savedUserAddress != null && _savedUserAddress!.isNotEmpty
+                              ? _savedUserAddress!
+                              : (order.deliveryAddress.isNotEmpty && order.deliveryAddress != 'Địa chỉ nhận hàng của bạn'
+                                  ? order.deliveryAddress
+                                  : 'Điểm nhận hàng'),
+                        ),
+                      ),
+                      // Xe Shipper di chuyển
+                      Marker(
+                        point: shipperPos,
+                        width: 90,
+                        height: 70,
+                        alignment: Alignment.center,
+                        child: _buildShipperBadge(
+                          isWaiting: order.status == OrderStatus.preparing,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+          // Badge trạng thái góc trên bên phải
           Positioned(
             top: 12,
             right: 12,
@@ -265,7 +509,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
+                    color: Colors.black.withValues(alpha: 0.12),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -290,6 +534,36 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                   ),
                 ],
               ),
+            ),
+          ),
+          // Nút điều khiển Map (Recenter, Zoom +, Zoom -) góc dưới bên phải
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildMapControlBtn(
+                  icon: Icons.my_location,
+                  onTap: () => _mapController.move(centerPos, 14.5),
+                ),
+                const SizedBox(height: 6),
+                _buildMapControlBtn(
+                  icon: Icons.add,
+                  onTap: () => _mapController.move(
+                    _mapController.camera.center,
+                    _mapController.camera.zoom + 1,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                _buildMapControlBtn(
+                  icon: Icons.remove,
+                  onTap: () => _mapController.move(
+                    _mapController.camera.center,
+                    _mapController.camera.zoom - 1,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -765,49 +1039,3 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   }
 }
 
-class _MapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final backgroundPaint = Paint()..color = const Color(0xFFE9EDF0);
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), backgroundPaint);
-
-    final parkPaint = Paint()..color = const Color(0xFFD7EAD5);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(20, 15, size.width * 0.28, 45), const Radius.circular(8)),
-      parkPaint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * 0.55, size.height - 60, size.width * 0.35, 45), const Radius.circular(8)),
-      parkPaint,
-    );
-
-    final roadPaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 14
-      ..style = PaintingStyle.stroke;
-
-    final roadBorderPaint = Paint()
-      ..color = const Color(0xFFD0D7DE)
-      ..strokeWidth = 16
-      ..style = PaintingStyle.stroke;
-
-    canvas.drawLine(Offset(0, size.height * 0.45), Offset(size.width, size.height * 0.45), roadBorderPaint);
-    canvas.drawLine(Offset(0, size.height * 0.45), Offset(size.width, size.height * 0.45), roadPaint);
-
-    final routePaint = Paint()
-      ..color = Colors.orange.shade600
-      ..strokeWidth = 4
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    final path = Path();
-    path.moveTo(60, 110);
-    path.quadraticBezierTo(size.width * 0.4, size.height * 0.3, size.width * 0.5, size.height * 0.55);
-    path.lineTo(size.width - 80, size.height - 60);
-
-    canvas.drawPath(path, routePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

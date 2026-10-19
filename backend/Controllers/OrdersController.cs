@@ -54,6 +54,26 @@ public sealed class OrdersController(
         }
     }
 
+    [HttpPost("orders/direct")]
+    public async Task<IActionResult> CreateDirect(
+        Guid userId,
+        [FromBody] CreateDirectOrderRequest input,
+        CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await orders.CreateDirect(userId, input, ct));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
+        catch (Exception exception)
+        {
+            return StatusCode(500, new { error = exception.Message });
+        }
+    }
+
     [HttpGet("orders")]
     public async Task<IActionResult> History(Guid userId, CancellationToken ct) =>
         Ok(await orders.History(userId, ct));
