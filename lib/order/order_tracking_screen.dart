@@ -4,8 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'order_data.dart';
 import 'order_review_screen.dart';
+import 'shipper_chat_screen.dart';
 import '../services/geocoding_service.dart';
 import '../services/profile_api_service.dart';
 
@@ -170,88 +172,36 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     super.dispose();
   }
 
-  void _callShipper(String phone) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('📞 Đang gọi cho tài xế ($phone)...'),
-        backgroundColor: Colors.blue.shade700,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  Future<void> _callShipper(String phone) async {
+    final rawPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    final uri = Uri.parse('tel:$rawPhone');
+    try {
+      final launched = await launchUrl(uri);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('📞 Không thể mở cuộc gọi cho số $rawPhone'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi gọi điện: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
   }
 
-  void _messageShipper(String name) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          left: 16,
-          right: 16,
-          top: 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Nhắn tin với $name',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'Shipper: "Chào bạn, tôi đang lấy đồ ăn tại quán, sẽ giao ngay cho bạn nhé!"',
-                style: TextStyle(fontSize: 13, color: Colors.black87),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Nhập tin nhắn cho tài xế...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Đã gửi tin nhắn cho tài xế')),
-                    );
-                  },
-                  icon: const Icon(Icons.send),
-                  style: IconButton.styleFrom(backgroundColor: Colors.orange),
-                ),
-              ],
-            ),
-          ],
-        ),
+  void _messageShipper(OrderModel order, ShipperInfo shipper) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ShipperChatScreen(order: order, shipper: shipper),
       ),
     );
   }
@@ -295,7 +245,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                 const SizedBox(height: 16),
 
                 if (order.shipper != null) ...[
-                  _buildShipperCard(order.shipper!),
+                  _buildShipperCard(order, order.shipper!),
                   const SizedBox(height: 16),
                 ],
 
@@ -666,7 +616,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     );
   }
 
-  Widget _buildShipperCard(ShipperInfo shipper) {
+  Widget _buildShipperCard(OrderModel order, ShipperInfo shipper) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -715,13 +665,15 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             ),
           ),
           IconButton.filledTonal(
+            tooltip: 'Gọi điện',
             onPressed: () => _callShipper(shipper.phone),
             icon: const Icon(Icons.phone, color: Colors.green),
             style: IconButton.styleFrom(backgroundColor: Colors.green.shade50),
           ),
           const SizedBox(width: 6),
           IconButton.filledTonal(
-            onPressed: () => _messageShipper(shipper.name),
+            tooltip: 'Nhắn tin',
+            onPressed: () => _messageShipper(order, shipper),
             icon: const Icon(Icons.chat_bubble_outline, color: Colors.orange),
             style: IconButton.styleFrom(backgroundColor: Colors.orange.shade50),
           ),
