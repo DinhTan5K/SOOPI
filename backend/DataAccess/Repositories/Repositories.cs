@@ -114,27 +114,25 @@ public sealed class RestaurantRepository(SoopiDbContext db) : IRestaurantReposit
 
         if (latitude.HasValue && longitude.HasValue)
         {
-            if (radiusKm.HasValue && radiusKm > 0)
-            {
-                results = results.Where(restaurant =>
-                        restaurant.Latitude.HasValue && restaurant.Longitude.HasValue
-                        && Distance(
-                            latitude.Value,
-                            longitude.Value,
-                            (double)restaurant.Latitude.Value,
-                            (double)restaurant.Longitude.Value) <= radiusKm.Value)
-                    .ToList();
-            }
+            var effectiveRadius = (radiusKm.HasValue && radiusKm.Value > 0) ? radiusKm.Value : 20.0;
 
-            // Sắp xếp ưu tiên theo khoảng cách gần nhất tới địa chỉ giao hàng
-            results = results.OrderBy(restaurant =>
-                restaurant.Latitude.HasValue && restaurant.Longitude.HasValue
-                    ? Distance(
+            // CHỈ lấy các quán có tọa độ hợp lệ và nằm trong bán kính cho phép (loại bỏ quán ở xa)
+            results = results.Where(restaurant =>
+                    restaurant.Latitude.HasValue && restaurant.Longitude.HasValue
+                    && Distance(
                         latitude.Value,
                         longitude.Value,
                         (double)restaurant.Latitude.Value,
-                        (double)restaurant.Longitude.Value)
-                    : double.MaxValue)
+                        (double)restaurant.Longitude.Value) <= effectiveRadius)
+                .ToList();
+
+            // Sắp xếp ưu tiên theo khoảng cách gần nhất tới địa chỉ giao hàng
+            results = results.OrderBy(restaurant =>
+                Distance(
+                    latitude.Value,
+                    longitude.Value,
+                    (double)restaurant.Latitude!.Value,
+                    (double)restaurant.Longitude!.Value))
                 .ThenByDescending(restaurant => restaurant.AverageRating)
                 .ToList();
         }
@@ -195,6 +193,9 @@ public sealed class OrderRepository(SoopiDbContext db) : IOrderRepository
 
     public Task<List<FoodOrder>> HistoryAsync(Guid userId, CancellationToken ct) =>
         db.Orders
+            .Include(order => order.Items)
+            .Include(order => order.Restaurant)
+            .Include(order => order.Shipper)
             .Where(order => order.CustomerId == userId)
             .OrderByDescending(order => order.CreatedAt)
             .AsNoTracking()

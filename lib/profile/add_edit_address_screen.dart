@@ -152,7 +152,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
               _buildTextField(
                 controller: _nameController,
                 label: 'Tên người nhận *',
-                hint: 'Ví dụ: Nguyễn Văn A',
+                hint: 'Nhập họ và tên người nhận',
                 icon: Icons.person_outline,
                 validator: (val) => val == null || val.trim().isEmpty ? 'Vui lòng nhập tên người nhận' : null,
               ),

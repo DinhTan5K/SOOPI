@@ -54,7 +54,7 @@ class OrderItem {
     required this.name,
     required this.price,
     required this.quantity,
-    this.emoji = '🍔',
+    this.emoji = '',
     this.note = '',
   });
 
@@ -72,7 +72,7 @@ class OrderItem {
     name: json['name'] as String,
     price: json['price'] as int,
     quantity: json['quantity'] as int,
-    emoji: json['emoji'] as String? ?? '🍔',
+    emoji: json['emoji'] as String? ?? '',
     note: json['note'] as String? ?? '',
   );
 }
@@ -137,7 +137,7 @@ class OrderModel {
     required this.id,
     required this.restaurantName,
     required this.restaurantAddress,
-    this.restaurantEmoji = '🏪',
+    this.restaurantEmoji = '',
     required this.items,
     this.deliveryFee = 16000,
     this.discount = 0,
@@ -167,7 +167,7 @@ class OrderData extends ChangeNotifier {
   factory OrderData() => _instance;
 
   OrderData._internal() {
-    _initSampleData();
+    refreshFromApi();
   }
 
   final List<OrderModel> _orders = [];
@@ -183,13 +183,11 @@ class OrderData extends ChangeNotifier {
     notifyListeners();
     try {
       final remoteOrders = await OrderApiService().fetchOrders();
-      if (remoteOrders.isNotEmpty) {
-        _orders.clear();
-        _orders.addAll(remoteOrders);
-        isFromBackend = true;
-      }
+      _orders.clear();
+      _orders.addAll(remoteOrders);
+      isFromBackend = true;
     } catch (e) {
-      debugPrint('OrderData: Chưa kết nối được BE ($e), tiếp tục dùng dữ liệu local');
+      debugPrint('OrderData: Chưa kết nối được BE ($e)');
     } finally {
       isLoading = false;
       notifyListeners();
@@ -200,11 +198,13 @@ class OrderData extends ChangeNotifier {
     try {
       final updated = await OrderApiService().trackOrder(orderId);
       if (updated != null) {
-        final idx = _orders.indexWhere((o) => o.id == orderId);
+        final idx = _orders.indexWhere((o) => o.id.toLowerCase() == orderId.toLowerCase());
         if (idx != -1) {
           _orders[idx] = updated;
-          notifyListeners();
+        } else {
+          _orders.insert(0, updated);
         }
+        notifyListeners();
       }
     } catch (e) {
       debugPrint('OrderData: Chưa đồng bộ được tracking từ BE ($e)');
@@ -213,168 +213,42 @@ class OrderData extends ChangeNotifier {
 
   OrderModel? findById(String id) {
     try {
-      return _orders.firstWhere((o) => o.id == id);
+      return _orders.firstWhere((o) => o.id.toLowerCase() == id.toLowerCase());
     } catch (_) {
       return null;
     }
   }
 
-  void _initSampleData() {
-    _orders.add(
-      OrderModel(
-        id: 'SP-8839',
-        restaurantName: 'Soopi Burger Fastfood',
-        restaurantAddress: 'Số 12 Ngõ 84 Trần Thái Tông, Cầu Giấy',
-        restaurantEmoji: '🍔',
-        status: OrderStatus.delivering,
-        createdAt: DateTime.now().subtract(const Duration(minutes: 18)),
-        estimatedDeliveryMinutes: 10,
-        deliveryAddress: 'Phòng 402, Tòa FPT Tower, Số 10 Phạm Văn Bạch',
-        paymentMethod: 'Tiền mặt khi nhận hàng (COD)',
-        deliveryFee: 15000,
-        discount: 10000,
-        shipper: ShipperInfo(
-          name: 'Nguyễn Văn Hùng',
-          phone: '0987.654.321',
-          rating: 4.9,
-          bikePlate: '29-B1 888.66',
-          bikeType: 'Honda Wave Alpha (Đỏ đen)',
-          avatarUrl: 'https://ui-avatars.com/api/?name=Van+Hung&background=FF8A00&color=fff',
-        ),
-        items: [
-          OrderItem(
-            id: 'burger',
-            name: 'Double Cheese Burger',
-            price: 65000,
-            quantity: 2,
-            emoji: '🍔',
-            note: 'Ít tương ớt, thêm phô mai',
-          ),
-          OrderItem(
-            id: 'fries',
-            name: 'Khoai tây chiên lắc phô mai',
-            price: 30000,
-            quantity: 1,
-            emoji: '🍟',
-          ),
-          OrderItem(
-            id: 'tea',
-            name: 'Trà đào cam sả',
-            price: 35000,
-            quantity: 2,
-            emoji: '🥤',
-            note: 'Ít đường, nhiều đá',
-          ),
-        ],
-      ),
-    );
-
-    _orders.add(
-      OrderModel(
-        id: 'SP-7512',
-        restaurantName: 'Italiano Pizza House',
-        restaurantAddress: '15 Duy Tân, Cầu Giấy, Hà Nội',
-        restaurantEmoji: '🍕',
-        status: OrderStatus.completed,
-        createdAt: DateTime.now().subtract(const Duration(days: 1, hours: 2)),
-        deliveryAddress: 'Phòng 402, Tòa FPT Tower, Số 10 Phạm Văn Bạch',
-        paymentMethod: 'Thẻ ngân hàng / Ví điện tử',
-        deliveryFee: 18000,
-        discount: 15000,
-        shipper: ShipperInfo(
-          name: 'Trần Minh Quân',
-          phone: '0912.333.444',
-          rating: 5.0,
-          bikePlate: '29-K2 567.89',
-          bikeType: 'Yamaha Sirius (Xanh)',
-        ),
-        items: [
-          OrderItem(
-            id: 'pizza',
-            name: 'Pepperoni Pizza cỡ vừa',
-            price: 120000,
-            quantity: 1,
-            emoji: '🍕',
-          ),
-          OrderItem(
-            id: 'coke',
-            name: 'Coca Cola tươi',
-            price: 15000,
-            quantity: 2,
-            emoji: '🥤',
-          ),
-        ],
-      ),
-    );
-
-    _orders.add(
-      OrderModel(
-        id: 'SP-6201',
-        restaurantName: 'Tiệm Bánh Mì Chảo Cô Ba',
-        restaurantAddress: '88 Cầu Giấy, Hà Nội',
-        restaurantEmoji: '🍳',
-        status: OrderStatus.completed,
-        createdAt: DateTime.now().subtract(const Duration(days: 3)),
-        deliveryAddress: 'Số 22 ngõ 165 Cầu Giấy',
-        paymentMethod: 'Tiền mặt khi nhận hàng (COD)',
-        deliveryFee: 15000,
-        discount: 0,
-        shipper: ShipperInfo(
-          name: 'Lê Hoàng Long',
-          phone: '0904.555.666',
-          rating: 4.8,
-          bikePlate: '29-P1 321.45',
-          bikeType: 'Honda Vision',
-        ),
-        items: [
-          OrderItem(
-            id: 'banhmi',
-            name: 'Bánh mì chảo đặc biệt xúc xích pate',
-            price: 55000,
-            quantity: 2,
-            emoji: '🥖',
-          ),
-          OrderItem(
-            id: 'soymilk',
-            name: 'Sữa đậu nành nguyên chất',
-            price: 12000,
-            quantity: 2,
-            emoji: '🥛',
-          ),
-        ],
-        review: ReviewModel(
-          restaurantRating: 5,
-          restaurantTags: ['Món nóng hổi', 'Hương vị đậm đà', 'Đóng gói cẩn thận'],
-          restaurantComment: 'Bánh mì rất giòn, pate béo thơm tuyệt vời!',
-          shipperRating: 5,
-          shipperTags: ['Giao hàng nhanh', 'Thân thiện, lịch sự'],
-          shipperComment: 'Shipper đến sớm và rất nhiệt tình.',
-          tipAmount: 10000,
-          createdAt: DateTime.now().subtract(const Duration(days: 3)),
-        ),
-      ),
-    );
-
-    _orders.add(
-      OrderModel(
-        id: 'SP-4820',
-        restaurantName: 'Bún Chả Hà Nội Xưa',
-        restaurantAddress: '102 Nguyễn Khánh Toàn, Cầu Giấy',
-        restaurantEmoji: '🍲',
-        status: OrderStatus.cancelled,
-        createdAt: DateTime.now().subtract(const Duration(days: 7)),
-        deliveryAddress: 'Phòng 402, Tòa FPT Tower',
-        items: [
-          OrderItem(
-            id: 'buncha',
-            name: 'Bún chả que tre đặc biệt',
-            price: 60000,
-            quantity: 1,
-            emoji: '🍲',
-          ),
-        ],
-      ),
-    );
+  /// Đặt đơn hàng mới lưu trực tiếp vào Database thông qua Backend API
+  Future<OrderModel> createOrder({
+    String restaurantId = '',
+    required String restaurantName,
+    required String restaurantAddress,
+    String restaurantEmoji = '',
+    required List<OrderItem> items,
+    required String deliveryAddress,
+    String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
+    int deliveryFee = 16000,
+    int discount = 0,
+  }) async {
+    try {
+      final backendOrder = await OrderApiService().createOrder(
+        restaurantId: restaurantId,
+        restaurantName: restaurantName,
+        restaurantAddress: restaurantAddress,
+        items: items,
+        deliveryAddress: deliveryAddress,
+        paymentMethod: paymentMethod,
+        deliveryFee: deliveryFee,
+      );
+      _orders.insert(0, backendOrder);
+      isFromBackend = true;
+      notifyListeners();
+      return backendOrder;
+    } catch (e) {
+      debugPrint('OrderData.createOrder Backend error: $e');
+      rethrow;
+    }
   }
 
   void advanceOrderStatus(String orderId) {
@@ -413,16 +287,10 @@ class OrderData extends ChangeNotifier {
       discount: 0,
       paymentMethod: oldOrder.paymentMethod,
       deliveryAddress: oldOrder.deliveryAddress,
-      status: OrderStatus.preparing,
+      status: OrderStatus.pending,
       createdAt: DateTime.now(),
       estimatedDeliveryMinutes: 25,
-      shipper: ShipperInfo(
-        name: 'Nguyễn Văn Hùng',
-        phone: '0987.654.321',
-        rating: 4.9,
-        bikePlate: '29-B1 888.66',
-        bikeType: 'Honda Wave Alpha',
-      ),
+      shipper: null,
     );
 
     _orders.insert(0, newOrder);

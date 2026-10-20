@@ -7,6 +7,7 @@ class UserProfile {
   final String avatarUrl;
   final String gender;
   final DateTime? dateOfBirth;
+  final String role;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -19,6 +20,7 @@ class UserProfile {
     this.avatarUrl = '',
     this.gender = 'Nam',
     this.dateOfBirth,
+    this.role = 'Customer',
     this.createdAt,
     this.updatedAt,
   });
@@ -33,6 +35,7 @@ class UserProfile {
       avatarUrl: json['avatarUrl'] ?? json['photoUrl'] ?? '',
       gender: json['gender'] ?? 'Nam',
       dateOfBirth: json['dateOfBirth'] != null ? DateTime.tryParse(json['dateOfBirth'].toString()) : null,
+      role: json['role']?.toString() ?? 'Customer',
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'].toString()) : null,
       updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'].toString()) : null,
     );
@@ -48,6 +51,7 @@ class UserProfile {
       'avatarUrl': avatarUrl,
       'gender': gender,
       'dateOfBirth': dateOfBirth?.toIso8601String(),
+      'role': role,
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
     };
@@ -62,6 +66,7 @@ class UserProfile {
     String? avatarUrl,
     String? gender,
     DateTime? dateOfBirth,
+    String? role,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -74,6 +79,7 @@ class UserProfile {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       gender: gender ?? this.gender,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+      role: role ?? this.role,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

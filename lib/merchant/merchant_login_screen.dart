@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'merchant_screen.dart';
 import '../services/auth_api_service.dart';
 import '../services/profile_api_service.dart';
+import '../services/merchant_api_service.dart';
 import '../widgets/otp_verification_dialog.dart';
 import '../widgets/forgot_password_dialog.dart';
 
@@ -70,6 +71,13 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
         try {
           await credential.user?.updateDisplayName(_name.text.trim());
         } catch (_) {}
+
+        // Đăng ký quyền Chủ quán (Role = Owner) lên Backend
+        try {
+          await MerchantApiService().request('POST', 'register');
+        } catch (e) {
+          debugPrint('Lỗi kích hoạt quyền Chủ quán: $e');
+        }
       } else {
         await FirebaseAuth.instance
             .signInWithEmailAndPassword(
@@ -77,6 +85,30 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
               password: password,
             )
             .timeout(const Duration(seconds: 15));
+
+        // Kiểm tra phân quyền (Role): Chỉ tài khoản Owner hoặc Admin mới được phép vào Cổng Chủ quán!
+        ProfileApiService().clearCache();
+        try {
+          final profile = await ProfileApiService().getProfile();
+          final role = profile.role.toLowerCase();
+          if (role != 'owner' && role != 'restaurantowner' && role != 'admin') {
+            await FirebaseAuth.instance.signOut();
+            ProfileApiService().clearCache();
+            if (!mounted) return;
+            setState(() {
+              _error = 'Tài khoản của bạn là Khách hàng (Customer), không có quyền truy cập Cổng Quản lý Chủ quán.\n\nVui lòng đăng nhập bằng tài khoản Chủ quán hoặc đăng ký tài khoản Chủ quán mới!';
+            });
+            return;
+          }
+        } catch (e) {
+          await FirebaseAuth.instance.signOut();
+          ProfileApiService().clearCache();
+          if (!mounted) return;
+          setState(() {
+            _error = 'Không thể xác thực quyền truy cập Chủ quán: $e';
+          });
+          return;
+        }
       }
       ProfileApiService().clearCache();
       if (!mounted) return;

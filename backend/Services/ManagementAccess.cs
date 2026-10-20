@@ -49,6 +49,22 @@ public sealed class CurrentAccount(SoopiDbContext db, IHttpContextAccessor acces
         if (user.Role != "Admin") throw new ManagementException(403, "Administrator access is required.");
         return user;
     }
+
+    public async Task<AppUser> Owner(bool create = false, CancellationToken ct = default)
+    {
+        var user = await Get(create: create, ct: ct);
+        if (user.Role != "Owner" && user.Role != "RestaurantOwner" && user.Role != "Admin")
+        {
+            var hasRestaurants = await db.Restaurants.AnyAsync(r => r.OwnerId == user.Id, ct);
+            if (!hasRestaurants)
+            {
+                throw new ManagementException(403, "Tài khoản của bạn là Khách hàng (Customer), không có quyền truy cập Cổng Quản lý Chủ quán.");
+            }
+            user.Role = "Owner";
+            await db.SaveChangesAsync(ct);
+        }
+        return user;
+    }
 }
 
 // Protect legacy URLs as well as the new routes; never trust an ID in the URL.

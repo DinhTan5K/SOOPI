@@ -62,7 +62,7 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('🎉 Cảm ơn bạn đã đánh giá đơn hàng!'),
+        content: Text('Cảm ơn bạn đã đánh giá đơn hàng!'),
         backgroundColor: Colors.green,
         duration: Duration(seconds: 2),
       ),

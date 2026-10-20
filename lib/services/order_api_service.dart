@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../order/order_data.dart';
 import 'profile_api_service.dart';
+import 'api_config.dart';
 
 class OrderApiService {
   static final OrderApiService _instance = OrderApiService._internal();
@@ -28,13 +29,85 @@ class OrderApiService {
     return headers;
   }
 
+  bool _isValidGuid(String? val) {
+    if (val == null || val.length != 36) return false;
+    return RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(val);
+  }
+
   Future<String?> _getUserId() async {
     try {
       final profile = await _profileService.getProfile();
-      return profile.id;
+      if (_isValidGuid(profile.id)) return profile.id;
+    } catch (_) {}
+    final initial = _profileService.getInitialProfile();
+    if (_isValidGuid(initial.id)) return initial.id;
+    return null;
+  }
+
+  Future<http.Response> _safeGet(String path, Map<String, String> headers, {Duration timeout = const Duration(seconds: 4)}) async {
+    try {
+      final uri = Uri.parse('$_baseUrl$path');
+      return await http.get(uri, headers: headers).timeout(timeout);
     } catch (_) {
-      final initial = _profileService.getInitialProfile();
-      return initial.id.isNotEmpty ? initial.id : null;
+      final detected = await ApiConfig().autoDetect();
+      if (detected) {
+        final uri = Uri.parse('$_baseUrl$path');
+        return await http.get(uri, headers: headers).timeout(timeout);
+      }
+      rethrow;
+    }
+  }
+
+  Future<http.Response> _safePost(String path, Map<String, String> headers, String body, {Duration timeout = const Duration(seconds: 8)}) async {
+    try {
+      final uri = Uri.parse('$_baseUrl$path');
+      return await http.post(uri, headers: headers, body: body).timeout(timeout);
+    } catch (_) {
+      final detected = await ApiConfig().autoDetect();
+      if (detected) {
+        final uri = Uri.parse('$_baseUrl$path');
+        return await http.post(uri, headers: headers, body: body).timeout(timeout);
+      }
+      rethrow;
+    }
+  }
+
+  /// Đặt đơn hàng mới trực tiếp vào Backend Database
+  Future<OrderModel> createOrder({
+    required String restaurantId,
+    required String restaurantName,
+    required String restaurantAddress,
+    required List<OrderItem> items,
+    required String deliveryAddress,
+    String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
+    int deliveryFee = 16000,
+  }) async {
+    final userId = await _getUserId();
+    if (userId == null || userId.isEmpty) {
+      throw Exception('Chưa xác thực được người dùng.');
+    }
+
+    final headers = await _getHeaders();
+    final body = jsonEncode({
+      'restaurantId': restaurantId,
+      'items': items.map((it) => {
+        'menuItemId': it.id,
+        'quantity': it.quantity,
+        'note': it.note,
+      }).toList(),
+      'deliveryAddress': deliveryAddress,
+      'paymentMethod': paymentMethod,
+      'couponCode': null,
+      'note': '',
+    });
+
+    final response = await _safePost('/users/$userId/orders/direct', headers, body);
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      return _mapJsonToOrder(data);
+    } else {
+      throw Exception('Lỗi đặt hàng (${response.statusCode}): ${response.body}');
     }
   }
 
@@ -46,9 +119,7 @@ class OrderApiService {
     }
 
     final headers = await _getHeaders();
-    final uri = Uri.parse('$_baseUrl/users/$userId/orders');
-
-    final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 4));
+    final response = await _safeGet('/users/$userId/orders', headers);
 
     if (response.statusCode == 200) {
       final List<dynamic> list = jsonDecode(utf8.decode(response.bodyBytes));
@@ -64,10 +135,9 @@ class OrderApiService {
     if (userId == null || userId.isEmpty) return null;
 
     final headers = await _getHeaders();
-    final uri = Uri.parse('$_baseUrl/users/$userId/orders/$orderId');
 
     try {
-      final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 4));
+      final response = await _safeGet('/users/$userId/orders/$orderId', headers);
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         return _mapJsonToOrder(data as Map<String, dynamic>);
@@ -89,8 +159,6 @@ class OrderApiService {
     if (userId == null || userId.isEmpty) return false;
 
     final headers = await _getHeaders();
-    final uri = Uri.parse('$_baseUrl/users/$userId/orders/$orderId/review');
-
     final body = jsonEncode({
       'restaurantRating': restaurantRating,
       'shipperRating': shipperRating ?? restaurantRating,
@@ -98,7 +166,7 @@ class OrderApiService {
     });
 
     try {
-      final response = await http.post(uri, headers: headers, body: body).timeout(const Duration(seconds: 5));
+      final response = await _safePost('/users/$userId/orders/$orderId/review', headers, body, timeout: const Duration(seconds: 5));
       return response.statusCode == 200 || response.statusCode == 201;
     } catch (e) {
       debugPrint('OrderApiService.submitReview error: $e');
@@ -143,7 +211,7 @@ class OrderApiService {
         name: itemMap['itemName']?.toString() ?? itemMap['name']?.toString() ?? 'Món ăn',
         price: price,
         quantity: quantity,
-        emoji: '🍽️',
+        emoji: '',
         note: itemMap['note']?.toString() ?? '',
       );
     }).toList();
@@ -169,7 +237,7 @@ class OrderApiService {
       id: orderId,
       restaurantName: restaurantName,
       restaurantAddress: restaurantAddress,
-      restaurantEmoji: '🏪',
+      restaurantEmoji: '',
       items: items.isNotEmpty ? items : [
         OrderItem(id: 'default', name: 'Combo món ăn tổng hợp', price: (json['subtotal'] as num?)?.toInt() ?? 50000, quantity: 1)
       ],

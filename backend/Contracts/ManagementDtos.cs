@@ -17,3 +17,5 @@ public sealed record AvailabilityInput(bool IsAvailable);
 public sealed record ReasonInput([Required, StringLength(1000)] string Reason);
 public sealed record LockInput(bool Locked, [StringLength(1000)] string? Reason);
 public sealed record PageResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
+
+public sealed record UpdateOrderStatusInput([Required] string Status, string? Note);

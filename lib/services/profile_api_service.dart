@@ -6,25 +6,17 @@ import 'package:http/http.dart' as http;
 
 import '../models/user_profile.dart';
 import '../models/user_address.dart';
+import 'api_config.dart';
 
 class ProfileApiService {
   static final ProfileApiService _instance = ProfileApiService._internal();
   factory ProfileApiService() => _instance;
   ProfileApiService._internal();
 
-  /// Default API URL:
-  /// - Cắm cáp USB (đã chạy adb reverse tcp:5000 tcp:5000): 127.0.0.1 / localhost
-  /// - Wi-Fi điện thoại thật cùng mạng máy tính: 192.168.1.42 (IP máy tính)
-  /// - Android Emulator: 10.0.2.2
-  /// - Windows / Web: localhost / 127.0.0.1
-  String baseUrl = 'http://127.0.0.1:5000/api';
+  String get baseUrl => ApiConfig().baseUrl;
+  set baseUrl(String value) => ApiConfig().baseUrl = value;
 
-  static const List<String> candidateBaseUrls = [
-    'http://127.0.0.1:5000/api',
-    'http://localhost:5000/api',
-    'http://192.168.1.42:5000/api',
-    'http://10.0.2.2:5000/api',
-  ];
+  static List<String> get candidateBaseUrls => ApiConfig.defaultCandidates;
 
   // Bộ nhớ đệm tạm thời (In-memory Fallback) khi Backend .NET chưa chạy
   UserProfile? _localProfileCache;
@@ -36,18 +28,18 @@ class ProfileApiService {
   UserProfile getInitialProfile() {
     if (_localProfileCache != null) return _localProfileCache!;
     final user = FirebaseAuth.instance.currentUser;
-    final uid = user?.uid ?? 'guest_user';
-    final email = user?.email ?? 'user@soopi.vn';
-    final displayName = user?.displayName ?? 'Khách hàng SOOPI';
+    final uid = user?.uid ?? '';
+    final email = user?.email ?? '';
+    final displayName = user?.displayName ?? '';
     return UserProfile(
-      id: '1',
+      id: '',
       firebaseUid: uid,
-      fullName: displayName.isNotEmpty ? displayName : 'Khách hàng SOOPI',
+      fullName: displayName.isNotEmpty ? displayName : (email.isNotEmpty ? email.split('@')[0] : 'Người dùng'),
       email: email,
       phoneNumber: user?.phoneNumber ?? '',
       avatarUrl: user?.photoURL ?? '',
       gender: 'Nam',
-      dateOfBirth: DateTime(2000, 1, 1),
+      dateOfBirth: null,
       createdAt: DateTime.now(),
     );
   }
@@ -59,12 +51,13 @@ class ProfileApiService {
   }
 
   /// Lấy Firebase ID Token để đính kèm vào Header Authorization
-  Future<Map<String, String>> _getHeaders() async {
+  Future<Map<String, String>> getHeaders() async {
     final user = FirebaseAuth.instance.currentUser;
     final token = await user?.getIdToken();
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'bypass-tunnel-reminder': 'true',
       if (token != null) 'Authorization': 'Bearer $token',
       if (user != null) 'X-Firebase-Uid': user.uid,
       if (user?.email != null) 'X-Firebase-Email': user!.email!,
@@ -76,7 +69,7 @@ class ProfileApiService {
   /// Lấy thông tin Profile người dùng
   Future<UserProfile> getProfile() async {
     try {
-      final headers = await _getHeaders();
+      final headers = await getHeaders();
 
       final response = await http
           .get(Uri.parse('$baseUrl/user/profile'), headers: headers)
@@ -93,7 +86,7 @@ class ProfileApiService {
       for (final candidate in candidateBaseUrls) {
         if (candidate == baseUrl) continue;
         try {
-          final headers = await _getHeaders();
+          final headers = await getHeaders();
           final response = await http
               .get(Uri.parse('$candidate/user/profile'), headers: headers)
               .timeout(const Duration(milliseconds: 1500));
@@ -117,7 +110,7 @@ class ProfileApiService {
   /// Cập nhật thông tin Profile người dùng
   Future<UserProfile> updateProfile(UserProfile profile) async {
     try {
-      final headers = await _getHeaders();
+      final headers = await getHeaders();
 
       final response = await http
           .put(
@@ -131,6 +124,7 @@ class ProfileApiService {
         isConnectedToBackend = true;
         final data = jsonDecode(response.body);
         _localProfileCache = UserProfile.fromJson(data);
+        debugPrint('[ProfileApiService] Cập nhật thành công vào Database PostgreSQL: ${_localProfileCache?.avatarUrl}');
         // Cập nhật ngược lại Firebase displayName / photoURL nếu có
         final currentUser = FirebaseAuth.instance.currentUser;
         if (currentUser != null) {
@@ -142,36 +136,47 @@ class ProfileApiService {
           }
         }
         return _localProfileCache!;
+      } else {
+        debugPrint('[ProfileApiService] Backend phản hồi lỗi ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
-      debugPrint('[ProfileApiService] Cập nhật thất bại qua .NET Backend, lưu fallback local: $e');
-      isConnectedToBackend = false;
+      debugPrint('[ProfileApiService] Cập nhật thất bại qua .NET Backend ($baseUrl): $e');
     }
 
-    // Cập nhật Firebase Auth
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser != null) {
+    // Thử failover qua các candidateBaseUrls khác nếu baseUrl chính thất bại
+    for (final candidate in candidateBaseUrls) {
+      if (candidate == baseUrl) continue;
       try {
-        if (profile.fullName.isNotEmpty) {
-          await currentUser.updateDisplayName(profile.fullName);
-        }
-        if (profile.avatarUrl.isNotEmpty) {
-          await currentUser.updatePhotoURL(profile.avatarUrl);
+        final headers = await getHeaders();
+        final res = await http.put(
+          Uri.parse('$candidate/user/profile'),
+          headers: headers,
+          body: jsonEncode(profile.toJson()),
+        ).timeout(const Duration(seconds: 3));
+
+        if (res.statusCode == 200) {
+          baseUrl = candidate;
+          isConnectedToBackend = true;
+          final data = jsonDecode(res.body);
+          _localProfileCache = UserProfile.fromJson(data);
+          debugPrint('[ProfileApiService] Cập nhật thành công qua candidate $candidate: ${_localProfileCache?.avatarUrl}');
+          final currentUser = FirebaseAuth.instance.currentUser;
+          if (currentUser != null) {
+            if (profile.fullName.isNotEmpty) await currentUser.updateDisplayName(profile.fullName);
+            if (profile.avatarUrl.isNotEmpty) await currentUser.updatePhotoURL(profile.avatarUrl);
+          }
+          return _localProfileCache!;
         }
       } catch (_) {}
     }
-
-    _localProfileCache = profile.copyWith(updatedAt: DateTime.now());
-    return _localProfileCache!;
+    isConnectedToBackend = false;
+    throw Exception('Không thể kết nối đến máy chủ Backend ($baseUrl) để lưu vào cơ sở dữ liệu. Hãy kiểm tra kết nối mạng máy tính hoặc cắm cáp USB.');
   }
 
-  /// Lấy danh sách địa chỉ giao hàng
+  /// Lấy danh sách địa chỉ giao hàng (Chỉ lấy dữ liệu thật từ Backend PostgreSQL)
   Future<List<UserAddress>> getAddresses() async {
-    final user = FirebaseAuth.instance.currentUser;
-    final uid = user?.uid ?? 'guest_user';
-
     try {
-      final headers = await _getHeaders();
+      final headers = await getHeaders();
       final response = await http
           .get(Uri.parse('$baseUrl/user/addresses'), headers: headers)
           .timeout(const Duration(seconds: 4));
@@ -185,85 +190,80 @@ class ProfileApiService {
         return list;
       }
     } catch (e) {
-      debugPrint('[ProfileApiService] Lấy địa chỉ qua backend thất bại, dùng local: $e');
+      debugPrint('[ProfileApiService] Lấy địa chỉ qua backend thất bại: $e');
+      for (final candidate in candidateBaseUrls) {
+        if (candidate == baseUrl) continue;
+        try {
+          final headers = await getHeaders();
+          final res = await http
+              .get(Uri.parse('$candidate/user/addresses'), headers: headers)
+              .timeout(const Duration(seconds: 2));
+          if (res.statusCode == 200) {
+            baseUrl = candidate;
+            isConnectedToBackend = true;
+            final List<dynamic> data = jsonDecode(res.body);
+            final list = data.map((e) => UserAddress.fromJson(e)).toList();
+            _localAddressesCache.clear();
+            _localAddressesCache.addAll(list);
+            return list;
+          }
+        } catch (_) {}
+      }
       isConnectedToBackend = false;
     }
 
-    // Khởi tạo mock address nếu chưa có
-    if (_localAddressesCache.isEmpty) {
-      _localAddressesCache.addAll([
-        UserAddress(
-          id: 'addr_1',
-          firebaseUid: uid,
-          label: 'Nhà riêng',
-          recipientName: _localProfileCache?.fullName ?? 'Nguyễn Văn A',
-          phoneNumber: _localProfileCache?.phoneNumber ?? '0987654321',
-          fullAddress:
-              'Số 123 Đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội',
-          note: 'Bấm chuông tầng 2',
-          isDefault: true,
-        ),
-        UserAddress(
-          id: 'addr_2',
-          firebaseUid: uid,
-          label: 'Văn phòng',
-          recipientName: _localProfileCache?.fullName ?? 'Nguyễn Văn A',
-          phoneNumber: _localProfileCache?.phoneNumber ?? '0987654321',
-          fullAddress: 'Tòa nhà Landmark 72, Phạm Hùng, Nam Từ Liêm, Hà Nội',
-          note: 'Gọi trước khi đến',
-          isDefault: false,
-        ),
-      ]);
-    }
+    // Không còn mock data: Trả về danh sách thật từ cache hoặc rỗng
     return List.from(_localAddressesCache);
   }
 
-  /// Thêm địa chỉ mới
+  /// Thêm địa chỉ mới vào Database Backend
   Future<UserAddress> addAddress(UserAddress address) async {
-    final user = FirebaseAuth.instance.currentUser;
-    final uid = user?.uid ?? 'guest_user';
-
+    final headers = await getHeaders();
     try {
-      final headers = await _getHeaders();
       final response = await http
           .post(
             Uri.parse('$baseUrl/user/addresses'),
             headers: headers,
             body: jsonEncode(address.toJson()),
           )
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         isConnectedToBackend = true;
         final data = jsonDecode(response.body);
-        return UserAddress.fromJson(data);
+        final created = UserAddress.fromJson(data);
+        _localAddressesCache.add(created);
+        return created;
       }
     } catch (e) {
       debugPrint('[ProfileApiService] Thêm địa chỉ qua backend thất bại: $e');
-    }
-
-    // Local fallback
-    final newId = 'addr_${DateTime.now().millisecondsSinceEpoch}';
-    var newAddr = address.copyWith(id: newId, firebaseUid: uid);
-
-    if (newAddr.isDefault) {
-      for (int i = 0; i < _localAddressesCache.length; i++) {
-        _localAddressesCache[i] = _localAddressesCache[i].copyWith(
-          isDefault: false,
-        );
+      for (final candidate in candidateBaseUrls) {
+        if (candidate == baseUrl) continue;
+        try {
+          final res = await http.post(
+            Uri.parse('$candidate/user/addresses'),
+            headers: headers,
+            body: jsonEncode(address.toJson()),
+          ).timeout(const Duration(seconds: 3));
+          if (res.statusCode == 200 || res.statusCode == 201) {
+            baseUrl = candidate;
+            isConnectedToBackend = true;
+            final data = jsonDecode(res.body);
+            final created = UserAddress.fromJson(data);
+            _localAddressesCache.add(created);
+            return created;
+          }
+        } catch (_) {}
       }
-    } else if (_localAddressesCache.isEmpty) {
-      newAddr = newAddr.copyWith(isDefault: true);
     }
 
-    _localAddressesCache.add(newAddr);
-    return newAddr;
+    throw Exception('Không thể lưu địa chỉ vào cơ sở dữ liệu. Vui lòng kiểm tra lại kết nối máy chủ.');
   }
 
   /// Cập nhật địa chỉ
   Future<UserAddress> updateAddress(UserAddress address) async {
     try {
-      final headers = await _getHeaders();
+      final headers = await getHeaders();
       final response = await http
           .put(
             Uri.parse('$baseUrl/user/addresses/${address.id}'),
@@ -301,7 +301,7 @@ class ProfileApiService {
   /// Xóa địa chỉ
   Future<void> deleteAddress(String id) async {
     try {
-      final headers = await _getHeaders();
+      final headers = await getHeaders();
       final response = await http
           .delete(Uri.parse('$baseUrl/user/addresses/$id'), headers: headers)
           .timeout(const Duration(seconds: 4));
@@ -325,7 +325,7 @@ class ProfileApiService {
   /// Đặt làm địa chỉ mặc định
   Future<void> setDefaultAddress(String id) async {
     try {
-      final headers = await _getHeaders();
+      final headers = await getHeaders();
       final response = await http
           .patch(
             Uri.parse('$baseUrl/user/addresses/$id/set-default'),

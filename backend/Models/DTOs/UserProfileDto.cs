@@ -10,6 +10,7 @@ namespace Soopi.Backend.Models.DTOs
         public string AvatarUrl { get; set; } = string.Empty;
         public string Gender { get; set; } = "Nam";
         public DateTime? DateOfBirth { get; set; }
+        public string Role { get; set; } = "Customer";
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }

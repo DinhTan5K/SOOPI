@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'order_data.dart';
+import '../services/order_socket_service.dart';
 import 'order_review_screen.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
@@ -17,6 +19,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
 
   late AnimationController _animController;
   late Animation<double> _shipperProgress;
+  StreamSubscription? _socketStatusSub;
 
   @override
   void initState() {
@@ -31,10 +34,40 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     );
 
     _orderData.syncTrack(widget.orderId);
+
+    // Lắng nghe cập nhật đơn hàng thời gian thực qua SignalR
+    OrderSocketService().joinOrder(widget.orderId);
+    _socketStatusSub = OrderSocketService().onOrderStatus.listen((data) {
+      if (!mounted) return;
+      final incomingId = (data['orderId'] ?? data['OrderId'])?.toString().toLowerCase();
+      final myId = widget.orderId.toLowerCase();
+      if (incomingId == null || incomingId == myId) {
+        final newStatusStr = (data['newStatus'] ?? data['status'] ?? data['Status'])?.toString().toLowerCase();
+        final order = _orderData.findById(widget.orderId);
+        if (order != null && newStatusStr != null) {
+          if (newStatusStr == 'delivered' || newStatusStr == 'completed') {
+            order.status = OrderStatus.completed;
+            order.estimatedDeliveryMinutes = 0;
+          } else if (newStatusStr == 'delivering') {
+            order.status = OrderStatus.delivering;
+            order.estimatedDeliveryMinutes = 15;
+          } else if (newStatusStr == 'preparing') {
+            order.status = OrderStatus.preparing;
+            order.estimatedDeliveryMinutes = 20;
+          } else if (newStatusStr == 'cancelled') {
+            order.status = OrderStatus.cancelled;
+          }
+          setState(() {});
+        }
+        _orderData.syncTrack(widget.orderId);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _socketStatusSub?.cancel();
+    OrderSocketService().leaveOrder(widget.orderId);
     _animController.dispose();
     super.dispose();
   }
@@ -42,7 +75,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   void _callShipper(String phone) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('📞 Đang gọi cho tài xế ($phone)...'),
+        content: Text('Đang gọi cho tài xế ($phone)...'),
         backgroundColor: Colors.blue.shade700,
         duration: const Duration(seconds: 2),
       ),
@@ -159,7 +192,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildMockMap(order),
+                _buildDeliveryMap(order),
 
                 const SizedBox(height: 16),
 
@@ -188,7 +221,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     );
   }
 
-  Widget _buildMockMap(OrderModel order) {
+  Widget _buildDeliveryMap(OrderModel order) {
     return Container(
       height: 220,
       width: double.infinity,
@@ -207,7 +240,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             left: 24,
             top: 70,
             child: _buildLocationPin(
-              emoji: '🏪',
+              icon: Icons.storefront_rounded,
               label: order.restaurantName,
               color: Colors.deepOrange,
               sublabel: 'Điểm lấy món',
@@ -217,37 +250,41 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             right: 24,
             bottom: 40,
             child: _buildLocationPin(
-              emoji: '📍',
+              icon: Icons.location_on_rounded,
               label: 'Vị trí của bạn',
               color: Colors.green.shade700,
               sublabel: 'Điểm nhận hàng',
             ),
           ),
           if (order.status == OrderStatus.delivering)
-            AnimatedBuilder(
-              animation: _shipperProgress,
-              builder: (context, child) {
-                final progress = _shipperProgress.value;
-                return LayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = constraints.maxWidth;
-                    final height = constraints.maxHeight;
-                    final startX = 60.0;
-                    final startY = 110.0;
-                    final endX = width - 80.0;
-                    final endY = height - 70.0;
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return AnimatedBuilder(
+                    animation: _shipperProgress,
+                    builder: (context, child) {
+                      final progress = _shipperProgress.value;
+                      final width = constraints.maxWidth;
+                      final height = constraints.maxHeight;
+                      final startX = 60.0;
+                      final startY = 110.0;
+                      final endX = width - 80.0;
+                      final endY = height - 70.0;
 
-                    final curX = startX + (endX - startX) * progress;
-                    final curY = startY + (endY - startY) * progress;
+                      final curX = startX + (endX - startX) * progress;
+                      final curY = startY + (endY - startY) * progress;
 
-                    return Positioned(
-                      left: curX - 22,
-                      top: curY - 22,
-                      child: _buildShipperBadge(),
-                    );
-                  },
-                );
-              },
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Transform.translate(
+                          offset: Offset(curX - 22, curY - 22),
+                          child: _buildShipperBadge(),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             )
           else if (order.status == OrderStatus.preparing)
             Positioned(
@@ -298,7 +335,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   }
 
   Widget _buildLocationPin({
-    required String emoji,
+    required IconData icon,
     required String label,
     required Color color,
     required String sublabel,
@@ -347,7 +384,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               ),
             ],
           ),
-          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 16))),
+          child: Center(child: Icon(icon, color: Colors.white, size: 18)),
         ),
       ],
     );
@@ -364,7 +401,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(
-            isWaiting ? 'Chờ lấy món' : 'Đang giao 🛵',
+            isWaiting ? 'Chờ lấy món' : 'Đang giao hàng',
             style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
           ),
         ),
@@ -616,7 +653,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '🎉 Đơn hàng đã giao thành công!',
+            'Đơn hàng đã giao thành công!',
             style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
