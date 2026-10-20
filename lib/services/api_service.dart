@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'profile_api_service.dart';
+import 'api_config.dart';
+import 'cloudinary_service.dart';
 
 num? _getNum(Map<String, dynamic> json, List<String> keys) {
   for (final key in keys) {
@@ -171,21 +173,27 @@ class ApiService {
   static List<String> get candidateBaseUrls => ProfileApiService.candidateBaseUrls;
 
   static Future<http.Response> _getWithFallback(String pathWithQuery, {Duration timeout = const Duration(seconds: 4)}) async {
+    const headers = {'bypass-tunnel-reminder': 'true'};
     final primary = baseUrl;
     try {
       final uri = Uri.parse('$primary$pathWithQuery');
-      return await http.get(uri).timeout(timeout);
+      return await http.get(uri, headers: headers).timeout(timeout);
     } catch (_) {
       for (final candidate in candidateBaseUrls) {
         if (candidate == primary) continue;
         try {
           final uri = Uri.parse('$candidate$pathWithQuery');
-          final res = await http.get(uri).timeout(const Duration(milliseconds: 1800));
+          final res = await http.get(uri, headers: headers).timeout(const Duration(milliseconds: 1800));
           if (res.statusCode == 200 || res.statusCode == 404) {
             baseUrl = candidate;
             return res;
           }
         } catch (_) {}
+      }
+      final detected = await ApiConfig().autoDetect();
+      if (detected) {
+        final uri = Uri.parse('$baseUrl$pathWithQuery');
+        return await http.get(uri, headers: headers).timeout(timeout);
       }
       rethrow;
     }
@@ -292,25 +300,8 @@ class ApiService {
     return null;
   }
 
-  /// UPLOAD ẢNH LÊN CLOUDINARY THÔNG QUA C# BACKEND (POST /api/upload/image)
+  /// UPLOAD ẢNH LÊN CLOUDINARY THÔNG QUA BACKEND HOẶC DIRECT CLOUDINARY
   static Future<String?> uploadImage(dynamic imageFile) async {
-    final uri = Uri.parse('$baseUrl/upload/image');
-    try {
-      final request = http.MultipartRequest('POST', uri);
-      if (imageFile is String) {
-        request.files.add(await http.MultipartFile.fromPath('file', imageFile));
-      } else if (kIsWeb && imageFile is List<int>) {
-        request.files.add(http.MultipartFile.fromBytes('file', imageFile, filename: 'upload.jpg'));
-      }
-      final response = await request.send().timeout(const Duration(seconds: 30));
-      if (response.statusCode == 200) {
-        final respStr = await response.stream.bytesToString();
-        final json = jsonDecode(respStr);
-        return json['imageUrl']?.toString();
-      }
-    } catch (e) {
-      debugPrint('Error uploadImage: $e');
-    }
-    return null;
+    return CloudinaryService().uploadImage(imageFile);
   }
 }

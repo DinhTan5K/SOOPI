@@ -5,6 +5,8 @@ using SoopiFoodBE.Contracts;
 using SoopiFoodBE.DataAccess;
 using SoopiFoodBE.Models;
 using SoopiFoodBE.Services;
+using Microsoft.AspNetCore.SignalR;
+using SoopiFoodBE.Hubs;
 
 namespace SoopiFoodBE.Controllers;
 
@@ -13,11 +15,24 @@ public sealed class MerchantRestaurantsController(
     SoopiDbContext db, CurrentAccount accounts, RestaurantManagement management,
     IRestaurantService restaurants, IImageUploadService images) : ControllerBase
 {
+    [HttpPost("register")]
+    public async Task<IActionResult> Register(CancellationToken ct)
+    {
+        var user = await accounts.Get(create: true, ct: ct);
+        if (user.Role == "Customer")
+        {
+            user.Role = "Owner";
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+        return Ok(new { success = true, role = user.Role });
+    }
+
     [HttpGet("me")]
     public async Task<IActionResult> Me(CancellationToken ct)
     {
-        var user = await accounts.Get(create: true, ct: ct);
-        return Ok(new { user.Id, user.Email, user.FullName, user.Phone, user.AvatarUrl,
+        var user = await accounts.Owner(ct: ct);
+        return Ok(new { user.Id, user.Email, user.FullName, user.Phone, user.AvatarUrl, user.Role,
             HasRestaurants = await db.Restaurants.AnyAsync(r => r.OwnerId == user.Id, ct) });
     }
 
@@ -25,7 +40,7 @@ public sealed class MerchantRestaurantsController(
     public async Task<IActionResult> List(string? status, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         RestaurantManagement.Pagination(page, pageSize); RestaurantManagement.Status(status);
-        var user = await accounts.Get(create: true, ct: ct);
+        var user = await accounts.Owner(ct: ct);
         var query = db.Restaurants.AsNoTracking().Where(r => r.OwnerId == user.Id);
         if (status is not null) query = query.Where(r => r.ApprovalStatus == status);
         var total = await query.CountAsync(ct);
@@ -40,7 +55,7 @@ public sealed class MerchantRestaurantsController(
     [HttpGet("restaurants/{id:guid}")]
     public async Task<IActionResult> Detail(Guid id, CancellationToken ct)
     {
-        var user = await accounts.Get(ct: ct);
+        var user = await accounts.Owner(ct: ct);
         var r = await db.Restaurants.AsNoTracking().Include(r => r.Categories).ThenInclude(c => c.Items)
             .Include(r => r.OpeningHours).SingleOrDefaultAsync(r => r.Id == id && r.OwnerId == user.Id, ct);
         return r is null ? NotFound() : Ok(RestaurantManagement.View(r));
@@ -177,5 +192,120 @@ public sealed class MerchantRestaurantsController(
     private static void RequireCategory(Restaurant r, Guid categoryId)
     {
         if (!r.Categories.Any(c => c.Id == categoryId)) throw new ManagementException(404, "Category not found in this restaurant.");
+    }
+
+    [HttpGet("restaurants/{id:guid}/orders")]
+    public async Task<IActionResult> Orders(
+        Guid id,
+        [FromQuery] string? status,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken ct = default)
+    {
+        await management.Owned(id, ct);
+        var query = db.Orders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.Customer)
+            .Where(o => o.RestaurantId == id);
+
+        if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            query = query.Where(o => o.Status.ToLower() == status.ToLower());
+        }
+
+        var total = await query.CountAsync(ct);
+        var list = await query
+            .OrderByDescending(o => o.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(o => new
+            {
+                o.Id,
+                o.OrderCode,
+                o.CustomerId,
+                CustomerName = o.Customer != null ? (o.Customer.FullName ?? o.Customer.Email) : "Khách hàng",
+                CustomerPhone = o.Customer != null ? (o.Customer.Phone ?? "") : "",
+                o.DeliveryAddress,
+                o.Subtotal,
+                o.DiscountAmount,
+                o.DeliveryFee,
+                o.TotalAmount,
+                o.Status,
+                o.PaymentMethod,
+                o.PaymentStatus,
+                o.Note,
+                o.CreatedAt,
+                Items = o.Items.Select(i => new
+                {
+                    i.Id,
+                    i.MenuItemId,
+                    i.ItemName,
+                    i.UnitPrice,
+                    i.Quantity,
+                    i.Note
+                }).ToList()
+            })
+            .ToListAsync(ct);
+
+        return Ok(new { items = list, total, page, pageSize });
+    }
+
+    [HttpPatch("restaurants/{id:guid}/orders/{orderId:guid}/status")]
+    public async Task<IActionResult> UpdateOrderStatus(
+        Guid id,
+        Guid orderId,
+        [FromBody] UpdateOrderStatusInput input,
+        [FromServices] IHubContext<OrderHub> hubContext,
+        CancellationToken ct = default)
+    {
+        await management.Owned(id, ct);
+        var order = await db.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Customer)
+            .FirstOrDefaultAsync(o => o.Id == orderId && o.RestaurantId == id, ct)
+            ?? throw new ManagementException(404, "Order not found");
+
+        var oldStatus = order.Status;
+        var rawStatus = input.Status.Trim();
+        var newStatus = rawStatus.ToLowerInvariant() switch
+        {
+            "pending" => "Pending",
+            "accepted" => "Accepted",
+            "preparing" => "Preparing",
+            "readyforpickup" => "ReadyForPickup",
+            "pickedup" => "PickedUp",
+            "delivering" => "Delivering",
+            "delivered" => "Delivered",
+            "cancelled" or "canceled" => "Cancelled",
+            _ => rawStatus
+        };
+
+        order.Status = newStatus;
+        order.UpdatedAt = DateTime.UtcNow;
+        order.StatusHistory.Add(new OrderStatusHistory
+        {
+            Status = newStatus,
+            Note = input.Note ?? $"Chủ quán cập nhật trạng thái sang {newStatus}"
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        var payload = new
+        {
+            orderId = order.Id,
+            restaurantId = id,
+            oldStatus,
+            newStatus,
+            updatedAt = order.UpdatedAt,
+            note = input.Note
+        };
+
+        // Bắn sự kiện thời gian thực qua SignalR
+        await hubContext.Clients.Group($"order_{order.Id}").SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+        await hubContext.Clients.Group($"user_{order.CustomerId}").SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+        await hubContext.Clients.Group($"restaurant_{id}").SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+
+        return Ok(new { success = true, status = order.Status });
     }
 }

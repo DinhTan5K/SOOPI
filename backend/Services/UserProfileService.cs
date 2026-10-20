@@ -47,18 +47,43 @@ namespace Soopi.Backend.Services
 
         public async Task<UserProfileDto> UpdateUserProfileAsync(string firebaseUid, UpdateProfileDto dto)
         {
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.FirebaseUid == firebaseUid)
-                ?? throw new KeyNotFoundException($"Không tìm thấy user với FirebaseUid: {firebaseUid}");
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.FirebaseUid == firebaseUid);
 
-            if (!string.IsNullOrEmpty(dto.FullName)) user.FullName = dto.FullName;
-            user.Phone = dto.PhoneNumber;
-            user.AvatarUrl = dto.AvatarUrl;
-            if (!string.IsNullOrEmpty(dto.Gender)) user.Gender = dto.Gender;
-            if (dto.DateOfBirth.HasValue)
+            if (user == null)
             {
-                user.DateOfBirth = new DateTimeOffset(dto.DateOfBirth.Value);
+                user = new AppUser
+                {
+                    Id = Guid.NewGuid(),
+                    FirebaseUid = firebaseUid,
+                    Email = "",
+                    FullName = !string.IsNullOrEmpty(dto.FullName) ? dto.FullName : "Khách hàng SOOPI",
+                    AvatarUrl = dto.AvatarUrl,
+                    Phone = dto.PhoneNumber,
+                    Gender = !string.IsNullOrEmpty(dto.Gender) ? dto.Gender : "Nam",
+                    Role = "Customer",
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                };
+                if (dto.DateOfBirth.HasValue)
+                {
+                    var d = dto.DateOfBirth.Value;
+                    user.DateOfBirth = new DateTimeOffset(d.Year, d.Month, d.Day, 0, 0, 0, TimeSpan.Zero);
+                }
+                await _db.Users.AddAsync(user);
             }
-            user.UpdatedAt = DateTimeOffset.UtcNow;
+            else
+            {
+                if (!string.IsNullOrEmpty(dto.FullName)) user.FullName = dto.FullName;
+                if (dto.PhoneNumber != null) user.Phone = dto.PhoneNumber;
+                if (dto.AvatarUrl != null) user.AvatarUrl = dto.AvatarUrl;
+                if (!string.IsNullOrEmpty(dto.Gender)) user.Gender = dto.Gender;
+                if (dto.DateOfBirth.HasValue)
+                {
+                    var d = dto.DateOfBirth.Value;
+                    user.DateOfBirth = new DateTimeOffset(d.Year, d.Month, d.Day, 0, 0, 0, TimeSpan.Zero);
+                }
+                user.UpdatedAt = DateTimeOffset.UtcNow;
+            }
 
             await _db.SaveChangesAsync();
             return MapToProfileDto(user);
@@ -182,6 +207,7 @@ namespace Soopi.Backend.Services
                 AvatarUrl = user.AvatarUrl ?? string.Empty,
                 Gender = user.Gender ?? "Nam",
                 DateOfBirth = user.DateOfBirth?.DateTime,
+                Role = user.Role ?? "Customer",
                 CreatedAt = user.CreatedAt.DateTime,
                 UpdatedAt = user.UpdatedAt?.DateTime
             };

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'auth_screen.dart'; 
+import 'services/api_config.dart'; 
 
 void main() async {
   // Bắt buộc phải có khi khởi tạo Firebase
@@ -11,6 +12,9 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Khởi tạo và tự động kết nối Backend API theo IP thiết bị
+  await ApiConfig().init();
   
   runApp(const MyApp());
 }

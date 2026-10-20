@@ -54,7 +54,7 @@ class OrderItem {
     required this.name,
     required this.price,
     required this.quantity,
-    this.emoji = '🍔',
+    this.emoji = '',
     this.note = '',
   });
 
@@ -72,7 +72,7 @@ class OrderItem {
     name: json['name'] as String,
     price: json['price'] as int,
     quantity: json['quantity'] as int,
-    emoji: json['emoji'] as String? ?? '🍔',
+    emoji: json['emoji'] as String? ?? '',
     note: json['note'] as String? ?? '',
   );
 }
@@ -132,12 +132,12 @@ class OrderModel {
   OrderStatus status;
   final DateTime createdAt;
   int estimatedDeliveryMinutes;
-  final ShipperInfo? shipper;
+  ShipperInfo? shipper;
   ReviewModel? review;
-  final double? restaurantLat;
-  final double? restaurantLng;
-  final double? userLat;
-  final double? userLng;
+  double? restaurantLat;
+  double? restaurantLng;
+  double? userLat;
+  double? userLng;
 
   OrderModel({
     required this.id,
@@ -145,7 +145,7 @@ class OrderModel {
     this.orderCode,
     required this.restaurantName,
     required this.restaurantAddress,
-    this.restaurantEmoji = '🏪',
+    this.restaurantEmoji = '',
     required this.items,
     this.deliveryFee = 16000,
     this.discount = 0,
@@ -199,7 +199,7 @@ class OrderData extends ChangeNotifier {
       _orders.addAll(remoteOrders);
       isFromBackend = true;
     } catch (e) {
-      debugPrint('OrderData: Chưa kết nối được BE ($e), tiếp tục dùng dữ liệu local');
+      debugPrint('OrderData: Chưa kết nối được BE ($e)');
     } finally {
       isLoading = false;
       notifyListeners();
@@ -210,11 +210,13 @@ class OrderData extends ChangeNotifier {
     try {
       final updated = await OrderApiService().trackOrder(orderId);
       if (updated != null) {
-        final idx = _orders.indexWhere((o) => o.id == orderId);
+        final idx = _orders.indexWhere((o) => o.id.toLowerCase() == orderId.toLowerCase());
         if (idx != -1) {
           _orders[idx] = updated;
-          notifyListeners();
+        } else {
+          _orders.insert(0, updated);
         }
+        notifyListeners();
       }
     } catch (e) {
       debugPrint('OrderData: Chưa đồng bộ được tracking từ BE ($e)');
@@ -237,6 +239,81 @@ class OrderData extends ChangeNotifier {
     }
   }
 
+  /// Đặt đơn hàng mới lưu trực tiếp vào Database thông qua Backend API
+  Future<OrderModel> createOrder({
+    String? restaurantId,
+    required String restaurantName,
+    required String restaurantAddress,
+    String restaurantEmoji = '🏪',
+    required List<OrderItem> items,
+    required String deliveryAddress,
+    String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
+    int deliveryFee = 16000,
+    int discount = 0,
+    double? restaurantLat,
+    double? restaurantLng,
+    double? userLat,
+    double? userLng,
+  }) async {
+    try {
+      final backendOrder = await OrderApiService().createOrder(
+        restaurantId: restaurantId ?? '',
+        restaurantName: restaurantName,
+        restaurantAddress: restaurantAddress,
+        items: items,
+        deliveryAddress: deliveryAddress,
+        paymentMethod: paymentMethod,
+        deliveryFee: deliveryFee,
+      );
+      backendOrder.restaurantLat = restaurantLat;
+      backendOrder.restaurantLng = restaurantLng;
+      backendOrder.userLat = userLat;
+      backendOrder.userLng = userLng;
+      backendOrder.shipper ??= ShipperInfo(
+        name: 'Nguyễn Văn Hùng',
+        phone: '0987.654.321',
+        rating: 4.9,
+        bikePlate: '29-B1 888.66',
+        bikeType: 'Honda Wave Alpha',
+      );
+      _orders.insert(0, backendOrder);
+      isFromBackend = true;
+      notifyListeners();
+      return backendOrder;
+    } catch (e) {
+      debugPrint('OrderData.createOrder Backend error: $e, fallback local');
+      final tempId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
+      final newOrder = OrderModel(
+        id: tempId,
+        restaurantName: restaurantName,
+        restaurantAddress: restaurantAddress,
+        restaurantEmoji: restaurantEmoji,
+        items: List.from(items),
+        deliveryFee: deliveryFee,
+        discount: discount,
+        paymentMethod: paymentMethod,
+        deliveryAddress: deliveryAddress,
+        status: OrderStatus.preparing,
+        createdAt: DateTime.now(),
+        estimatedDeliveryMinutes: 25,
+        restaurantLat: restaurantLat,
+        restaurantLng: restaurantLng,
+        userLat: userLat,
+        userLng: userLng,
+        shipper: ShipperInfo(
+          name: 'Nguyễn Văn Hùng',
+          phone: '0987.654.321',
+          rating: 4.9,
+          bikePlate: '29-B1 888.66',
+          bikeType: 'Honda Wave Alpha',
+        ),
+      );
+      _orders.insert(0, newOrder);
+      notifyListeners();
+      return newOrder;
+    }
+  }
+
   void advanceOrderStatus(String orderId) {
     final order = findById(orderId);
     if (order == null) return;
@@ -252,100 +329,6 @@ class OrderData extends ChangeNotifier {
       order.estimatedDeliveryMinutes = 0;
     }
     notifyListeners();
-  }
-
-  OrderModel createOrder({
-    String? restaurantId,
-    required String restaurantName,
-    required String restaurantAddress,
-    required List<OrderItem> items,
-    required String deliveryAddress,
-    required String paymentMethod,
-    required int deliveryFee,
-    String restaurantEmoji = '🏪',
-    int discount = 0,
-    double? restaurantLat,
-    double? restaurantLng,
-    double? userLat,
-    double? userLng,
-  }) {
-    final tempId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
-    final newOrder = OrderModel(
-      id: tempId,
-      restaurantName: restaurantName,
-      restaurantAddress: restaurantAddress,
-      restaurantEmoji: restaurantEmoji,
-      items: List.from(items),
-      deliveryFee: deliveryFee,
-      discount: discount,
-      paymentMethod: paymentMethod,
-      deliveryAddress: deliveryAddress,
-      status: OrderStatus.preparing,
-      createdAt: DateTime.now(),
-      estimatedDeliveryMinutes: 25,
-      restaurantLat: restaurantLat,
-      restaurantLng: restaurantLng,
-      userLat: userLat,
-      userLng: userLng,
-      shipper: ShipperInfo(
-        name: 'Nguyễn Văn Hùng',
-        phone: '0987.654.321',
-        rating: 4.9,
-        bikePlate: '29-B1 888.66',
-        bikeType: 'Honda Wave Alpha',
-      ),
-    );
-
-    _orders.insert(0, newOrder);
-    notifyListeners();
-
-    OrderApiService().createDirectOrder(
-      restaurantId: restaurantId,
-      restaurantName: restaurantName,
-      restaurantAddress: restaurantAddress,
-      deliveryAddress: deliveryAddress,
-      paymentMethod: paymentMethod,
-      deliveryFee: deliveryFee,
-      userLat: userLat,
-      userLng: userLng,
-      restaurantLat: restaurantLat,
-      restaurantLng: restaurantLng,
-      items: items,
-    ).then((savedOrder) {
-      if (savedOrder != null) {
-        final idx = _orders.indexWhere((o) => o.id == tempId);
-        if (idx != -1) {
-          // Lưu dữ liệu thật từ DB đồng thời giữ tempId để màn hình theo dõi không bị mất
-          _orders[idx] = OrderModel(
-            id: tempId,
-            backendId: savedOrder.backendId ?? savedOrder.id,
-            orderCode: savedOrder.orderCode ?? tempId,
-            restaurantName: savedOrder.restaurantName,
-            restaurantAddress: savedOrder.restaurantAddress,
-            restaurantEmoji: savedOrder.restaurantEmoji,
-            items: savedOrder.items,
-            deliveryFee: savedOrder.deliveryFee,
-            discount: savedOrder.discount,
-            paymentMethod: savedOrder.paymentMethod,
-            deliveryAddress: savedOrder.deliveryAddress,
-            status: savedOrder.status,
-            createdAt: savedOrder.createdAt,
-            estimatedDeliveryMinutes: savedOrder.estimatedDeliveryMinutes,
-            shipper: savedOrder.shipper,
-            review: savedOrder.review,
-            restaurantLat: savedOrder.restaurantLat,
-            restaurantLng: savedOrder.restaurantLng,
-            userLat: savedOrder.userLat,
-            userLng: savedOrder.userLng,
-          );
-          notifyListeners();
-        }
-      }
-    }).catchError((e) {
-      debugPrint('Lỗi lưu đơn hàng vào DB: $e');
-    });
-
-    return newOrder;
   }
 
   OrderModel reorder(OrderModel oldOrder) {
@@ -367,16 +350,10 @@ class OrderData extends ChangeNotifier {
       discount: 0,
       paymentMethod: oldOrder.paymentMethod,
       deliveryAddress: oldOrder.deliveryAddress,
-      status: OrderStatus.preparing,
+      status: OrderStatus.pending,
       createdAt: DateTime.now(),
       estimatedDeliveryMinutes: 25,
-      shipper: ShipperInfo(
-        name: 'Nguyễn Văn Hùng',
-        phone: '0987.654.321',
-        rating: 4.9,
-        bikePlate: '29-B1 888.66',
-        bikeType: 'Honda Wave Alpha',
-      ),
+      shipper: null,
     );
 
     _orders.insert(0, newOrder);

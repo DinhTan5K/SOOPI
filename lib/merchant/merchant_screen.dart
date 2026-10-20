@@ -371,24 +371,49 @@ class _MerchantScreenState extends State<MerchantScreen> {
           ? _restaurantPicker()
           : _loadFailed
           ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _loadError ?? 'Không thể đọc dữ liệu quán.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(onPressed: _load, child: const Text('Thử lại')),
-                  if (_data.remote && _data.restaurantId == null)
-                    OutlinedButton.icon(
-                      onPressed: _saving
-                          ? null
-                          : () => _restaurant(create: true),
-                      icon: const Icon(Icons.add_business),
-                      label: const Text('Đăng ký quán ăn'),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _loadError?.contains('Khách hàng') == true
+                          ? Icons.block_rounded
+                          : Icons.error_outline,
+                      size: 52,
+                      color: Colors.red.shade400,
                     ),
-                ],
+                    const SizedBox(height: 14),
+                    Text(
+                      _loadError ?? 'Không thể đọc dữ liệu quán.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                    const SizedBox(height: 16),
+                    if (_loadError?.contains('Khách hàng') == true)
+                      FilledButton.icon(
+                        onPressed: () async {
+                          final nav = Navigator.of(context);
+                          await FirebaseAuth.instance.signOut();
+                          ProfileApiService().clearCache();
+                          if (mounted) nav.pop();
+                        },
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text('Đăng xuất & Quay lại'),
+                      )
+                    else ...[
+                      FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                      if (_data.remote && _data.restaurantId == null)
+                        OutlinedButton.icon(
+                          onPressed: _saving
+                              ? null
+                              : () => _restaurant(create: true),
+                          icon: const Icon(Icons.add_business),
+                          label: const Text('Đăng ký quán ăn'),
+                        ),
+                    ],
+                  ],
+                ),
               ),
             )
           : AbsorbPointer(
@@ -407,6 +432,8 @@ class _MerchantScreenState extends State<MerchantScreen> {
                             _menu(),
                             MerchantOrders(
                               acceptingOrders: _data.acceptingOrders,
+                              restaurantId: _data.restaurantId,
+                              api: _data.api,
                             ),
                           ],
                         ),

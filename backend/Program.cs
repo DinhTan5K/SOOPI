@@ -8,6 +8,13 @@ using SoopiFoodBE.DataAccess.Repositories;
 using SoopiFoodBE.Services;
 using Soopi.Backend.Services;
 using SoopiFoodBE.Contracts;
+using SoopiFoodBE.Hubs;
+using Microsoft.AspNetCore.SignalR;
+
+// Enable legacy timestamp behavior in Npgsql to allow timestamps with offsets
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+System.Globalization.CultureInfo.DefaultThreadCurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = System.Globalization.CultureInfo.InvariantCulture;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
@@ -19,6 +26,7 @@ builder.Services.AddScoped<RestaurantManagement>();
 builder.Services.AddProblemDetails();
 
 // Controllers & JSON configuration (tránh lỗi circular reference)
+builder.Services.AddSignalR();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -141,6 +149,7 @@ using (var scope = app.Services.CreateScope())
     {
         dbContext.Database.EnsureCreated();
         app.Logger.LogInformation("Database PostgreSQL đã sẵn sàng.");
+
     }
     catch (Exception ex)
     {
@@ -162,6 +171,7 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<OrderHub>("/orderHub");
 
 app.Run();
 

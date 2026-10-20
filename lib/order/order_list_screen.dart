@@ -1,10 +1,13 @@
+import 'dart:async';
+import '../services/order_socket_service.dart';
 import 'package:flutter/material.dart';
 import 'order_data.dart';
 import 'order_tracking_screen.dart';
 import 'order_review_screen.dart';
 
 class OrderListScreen extends StatefulWidget {
-  const OrderListScreen({super.key});
+  final VoidCallback? onBackToHome;
+  const OrderListScreen({super.key, this.onBackToHome});
 
   @override
   State<OrderListScreen> createState() => _OrderListScreenState();
@@ -14,16 +17,29 @@ class _OrderListScreenState extends State<OrderListScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final OrderData _orderData = OrderData();
+  StreamSubscription? _socketStatusSub;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _orderData.refreshFromApi();
+
+    _socketStatusSub = OrderSocketService().onOrderStatus.listen((data) {
+      if (mounted) {
+        final orderId = (data['orderId'] ?? data['OrderId'])?.toString();
+        if (orderId != null) {
+          _orderData.syncTrack(orderId);
+        } else {
+          _orderData.refreshFromApi();
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _socketStatusSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -32,7 +48,7 @@ class _OrderListScreenState extends State<OrderListScreen>
     final newOrder = _orderData.reorder(order);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('🎉 Đã mua lại đơn #${newOrder.id} thành công!'),
+        content: Text('Đã mua lại đơn #${newOrder.id} thành công!'),
         backgroundColor: Colors.green,
         duration: const Duration(seconds: 2),
       ),
@@ -83,14 +99,36 @@ class _OrderListScreenState extends State<OrderListScreen>
       builder: (context, _) {
         final activeOrders = _orderData.activeOrders;
         final pastOrders = _orderData.pastOrders;
+        final canPop = Navigator.canPop(context);
+        final showBackButton = canPop || widget.onBackToHome != null;
 
-        return Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            title: const Text(
-              'Đơn hàng của tôi',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-            ),
+        return PopScope(
+          canPop: canPop,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && widget.onBackToHome != null) {
+              widget.onBackToHome!();
+            }
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              automaticallyImplyLeading: false,
+              leading: showBackButton
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                      tooltip: 'Quay lại',
+                      onPressed: () {
+                        if (canPop) {
+                          Navigator.pop(context);
+                        } else if (widget.onBackToHome != null) {
+                          widget.onBackToHome!();
+                        }
+                      },
+                    )
+                  : null,
+              title: const Text(
+                'Đơn hàng của tôi',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+              ),
             actions: [
               IconButton(
                 tooltip: 'Làm mới từ máy chủ',
@@ -158,26 +196,27 @@ class _OrderListScreenState extends State<OrderListScreen>
                 orders: activeOrders,
                 emptyTitle: 'Chưa có đơn hàng nào đang giao',
                 emptySubtitle: 'Hãy chọn món ăn yêu thích và đặt ngay nhé!',
-                emptyEmoji: '🛵',
+                emptyIcon: Icons.delivery_dining_rounded,
               ),
               _buildOrdersList(
                 orders: pastOrders,
                 emptyTitle: 'Chưa có lịch sử đơn hàng',
                 emptySubtitle: 'Các đơn hàng đã hoàn thành hoặc đã hủy sẽ hiển thị ở đây.',
-                emptyEmoji: '📋',
+                emptyIcon: Icons.receipt_long_rounded,
               ),
             ],
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildOrdersList({
     required List<OrderModel> orders,
     required String emptyTitle,
     required String emptySubtitle,
-    required String emptyEmoji,
+    required IconData emptyIcon,
   }) {
     if (orders.isEmpty) {
       return Center(
@@ -186,7 +225,7 @@ class _OrderListScreenState extends State<OrderListScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(emptyEmoji, style: const TextStyle(fontSize: 50)),
+              Icon(emptyIcon, size: 64, color: Colors.orange.shade300),
               const SizedBox(height: 16),
               Text(emptyTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
               const SizedBox(height: 8),
@@ -237,8 +276,8 @@ class _OrderListScreenState extends State<OrderListScreen>
                     color: Colors.orange.shade50,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Center(
-                    child: Text(order.restaurantEmoji, style: const TextStyle(fontSize: 22)),
+                  child: const Center(
+                    child: Icon(Icons.storefront_rounded, color: Colors.orange, size: 24),
                   ),
                 ),
                 const SizedBox(width: 12),

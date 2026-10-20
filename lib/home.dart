@@ -14,6 +14,7 @@ import 'services/api_service.dart';
 import 'services/geocoding_service.dart';
 import 'services/profile_api_service.dart';
 import 'models/user_address.dart';
+import 'services/api_config.dart';
 import 'restaurant_detail_screen.dart';
 
 class DeliveryLocationOption {
@@ -100,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _errorMessage;
   String _selectedCategory = 'Tất cả';
   String _restaurantSort = 'relevance';
+  bool _onlyOpen = false;
 
   // --- VỊ TRÍ GPS THỰC TẾ CỦA THIẾT BỊ ---
   double _currentGpsLat = 0;
@@ -285,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
         category: category ?? _selectedCategory,
         lat: _selectedLat == 0 ? null : _selectedLat,
         lng: _selectedLng == 0 ? null : _selectedLng,
-        radiusKm: searchQuery.trim().isNotEmpty ? 20 : null,
+        radiusKm: 20,
       );
       if (mounted) {
         setState(() {
@@ -334,7 +336,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return matchingItems * 100 + (nameMatch ? 10 : 0) + (categoryMatch ? 1 : 0);
     }
 
-    final sorted = [...restaurants];
+    // Chỉ lấy quán trong bán kính 20km quanh vị trí hiện tại
+    final nearby = (_selectedLat != 0 && _selectedLng != 0)
+        ? restaurants.where((r) => distance(r) <= 20.0).toList()
+        : restaurants;
+    final sorted = [...nearby];
     switch (_restaurantSort) {
       case 'distance':
         sorted.sort((a, b) {
@@ -713,24 +719,33 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _selectedIndex,
         children: [
           SafeArea(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(),
-                  _buildTitle(),
-                  _buildSearchBar(),
-                  _buildBanner(),
-                  _buildCategories(),
-                  _buildRestaurantSection(),
-                  const SizedBox(height: 40), // Space for bottom nav padding
-                ],
+            child: RefreshIndicator(
+              onRefresh: () => _fetchData(),
+              color: Colors.orange,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildTopHeader(),
+                    _buildBanner(),
+                    _buildCategories(),
+                    _buildRestaurantSection(),
+                    const SizedBox(height: 60),
+                  ],
+                ),
               ),
             ),
           ),
-          const SafeArea(child: OrderListScreen()),
+          SafeArea(
+            child: OrderListScreen(
+              onBackToHome: () => setState(() => _selectedIndex = 0),
+            ),
+          ),
           _buildSimplePlaceholder('Món ăn yêu thích', Icons.favorite),
-          const ProfileScreen(),
+          ProfileScreen(
+            onBackToHome: () => setState(() => _selectedIndex = 0),
+          ),
         ],
       ),
       bottomNavigationBar: _buildBottomNavigationBar(),
@@ -744,80 +759,189 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildTopHeader() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final photoUrl = currentUser?.photoURL;
+    final displayName = currentUser?.displayName ?? 'Khách';
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFFF7A00), Color(0xFFFF9800)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x33FF7A00),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: _showAddressSelectionSheet,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Text(
-                        'Giao đến',
-                        style: TextStyle(color: Colors.grey, fontSize: 13),
-                      ),
-                      Icon(
-                        Icons.keyboard_arrow_down,
-                        color: Colors.grey,
-                        size: 18,
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on,
-                        color: Colors.orange,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          _selectedAddressName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Lấy vị trí thực tế',
-            onPressed: _getRealDeviceGpsPosition,
-            icon: _isLocatingGps
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.orange,
+          // Row 1: Delivery Location & Quick Icons
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: _showAddressSelectionSheet,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  )
-                : const Icon(Icons.my_location, color: Colors.orange),
-          ),
-          const SizedBox(width: 8),
-          InkWell(
-            onTap: () => setState(() => _selectedIndex = 3),
-            borderRadius: BorderRadius.circular(22),
-            child: CircleAvatar(
-              backgroundColor: Colors.orange.shade200,
-              radius: 22,
-              child: const CircleAvatar(
-                radius: 20,
-                backgroundImage: NetworkImage('https://ui-avatars.com/api/?name=User&background=random'),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_on, color: Colors.white, size: 16),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Giao đến: ',
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                        Expanded(
+                          child: Text(
+                            _selectedAddressName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
               ),
+              const SizedBox(width: 8),
+
+              // GPS Button
+              InkWell(
+                onTap: _getRealDeviceGpsPosition,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: _isLocatingGps
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.my_location, color: Colors.white, size: 16),
+                ),
+              ),
+              const SizedBox(width: 6),
+
+              // Server config icon
+              InkWell(
+                onTap: () => ApiConfig.showConfigDialog(context, onConnected: _fetchData),
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.wifi_tethering, color: Colors.white, size: 16),
+                ),
+              ),
+              const SizedBox(width: 6),
+
+              // User avatar
+              InkWell(
+                onTap: () => setState(() => _selectedIndex = 3),
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: CircleAvatar(
+                    radius: 14,
+                    backgroundImage: NetworkImage(
+                      photoUrl != null && photoUrl.isNotEmpty
+                          ? photoUrl
+                          : 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(displayName)}&background=FFA500&color=fff',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Row 2: Search Bar integrated inside header
+          Container(
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const SizedBox(width: 14),
+                const Icon(Icons.search, color: Colors.orange, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onSubmitted: _onSearchSubmitted,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      hintText: 'Tìm món ngon, trà sữa, burger...',
+                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                      isDense: true,
+                    ),
+                    onChanged: (val) => setState(() {}),
+                  ),
+                ),
+                if (_searchController.text.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                    onPressed: () {
+                      _searchController.clear();
+                      _fetchData(query: '');
+                    },
+                  ),
+                InkWell(
+                  onTap: () => _fetchData(),
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
+                    margin: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.tune_rounded, size: 16, color: Colors.orange),
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
             ),
           ),
         ],
@@ -848,123 +972,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTitle() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          RichText(
-            text: const TextSpan(
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w900,
-                color: Colors.black,
-                letterSpacing: -1,
-              ),
-              children: [
-                TextSpan(text: 'SOOPI '),
-                TextSpan(
-                  text: 'FOOD',
-                  style: TextStyle(color: Colors.orange),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Hôm nay bạn muốn ăn gì?',
-            style: TextStyle(color: Colors.grey, fontSize: 14),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              height: 50,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, color: Colors.grey),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      onSubmitted: _onSearchSubmitted,
-                      textInputAction: TextInputAction.search,
-                      autocorrect: false,
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Tìm kiếm món ăn, nhà hàng...',
-                        hintStyle: const TextStyle(color: Colors.grey),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, size: 20),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  _fetchData(query: '');
-                                },
-                              )
-                            : null,
-                      ),
-                      onChanged: (val) {
-                        setState(() {});
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          InkWell(
-            onTap: () => _fetchData(),
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              height: 50,
-              width: 50,
-              decoration: BoxDecoration(
-                color: Colors.orange,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(Icons.tune, color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildBanner() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Colors.orange, Colors.amber],
+            colors: [Color(0xFFFF5722), Color(0xFFFF9800)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.orange.withValues(alpha: 0.3),
+              color: const Color(0xFFFF5722).withValues(alpha: 0.25),
               blurRadius: 10,
-              offset: const Offset(0, 5),
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -973,60 +998,76 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(20),
+                      color: Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Text(
-                      'Khuyến mãi',
+                      '🎉 ƯU ĐÃI ĐỘC QUYỀN',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 12,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   const Text(
-                    'Giảm giá 50%\ncho đơn đầu tiên',
+                    'Giảm 50% đơn đầu tiên',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      height: 1.2,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () {},
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.orange,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'SOOPIVIP',
+                          style: TextStyle(
+                            color: Color(0xFFFF5722),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Tối đa 50k • Toàn menu',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                        ),
                       ),
-                      minimumSize: Size.zero,
-                    ),
-                    child: const Text(
-                      'Đặt ngay',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    ],
                   ),
                 ],
               ),
             ),
-            const Text('🍔', style: TextStyle(fontSize: 60)),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.local_offer_rounded,
+                size: 32,
+                color: Colors.white,
+              ),
+            ),
           ],
         ),
       ),
@@ -1035,96 +1076,106 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildCategories() {
     final categories = [
-      {'icon': '🍔', 'name': 'Burger'},
-      {'icon': '🍕', 'name': 'Pizza'},
-      {'icon': '🍣', 'name': 'Sushi'},
-      {'icon': '🥤', 'name': 'Đồ uống'},
-      {'icon': '🥗', 'name': 'Healthy'},
+      {'name': 'Tất cả', 'icon': Icons.lunch_dining_rounded},
+      {'name': 'Cơm', 'icon': Icons.rice_bowl_rounded},
+      {'name': 'Bún & Phở', 'icon': Icons.ramen_dining_rounded},
+      {'name': 'Burger', 'icon': Icons.lunch_dining_outlined},
+      {'name': 'Pizza', 'icon': Icons.local_pizza_rounded},
+      {'name': 'Trà sữa', 'icon': Icons.local_cafe_rounded},
+      {'name': 'Đồ uống', 'icon': Icons.local_drink_rounded},
+      {'name': 'Healthy', 'icon': Icons.eco_rounded},
     ];
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Danh mục',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedCategory = 'Tất cả';
-                  });
-                  _fetchData(category: 'Tất cả');
-                },
-                child: const Text(
-                  'Xem tất cả',
-                  style: TextStyle(
-                    color: Colors.orange,
-                    fontWeight: FontWeight.bold,
-                  ),
+                'Danh mục món ăn',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF212121),
                 ),
               ),
+              if (_selectedCategory != 'Tất cả')
+                GestureDetector(
+                  onTap: () {
+                    setState(() => _selectedCategory = 'Tất cả');
+                    _fetchData(category: 'Tất cả');
+                  },
+                  child: const Text(
+                    'Xem tất cả',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
         SizedBox(
-          height: 100,
-          child: ListView.builder(
+          height: 78,
+          child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: categories.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 14),
             itemBuilder: (context, index) {
               final cat = categories[index];
               final catName = cat['name'] as String;
               final isSelected = _selectedCategory == catName;
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: GestureDetector(
-                  onTap: () => _onCategorySelected(catName),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 65,
-                        height: 65,
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? Colors.orange.shade100
-                              : Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.orange
-                                : Colors.grey.shade300,
-                            width: isSelected ? 2 : 1,
-                          ),
+              return GestureDetector(
+                onTap: () => _onCategorySelected(catName),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: isSelected ? const Color(0xFFFF7A00) : const Color(0xFFF6F6F6),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected ? const Color(0xFFFF7A00) : const Color(0xFFE8E8E8),
+                          width: isSelected ? 1.5 : 1,
                         ),
-                        child: Center(
-                          child: Text(
-                            cat['icon'] as String,
-                            style: const TextStyle(fontSize: 30),
-                          ),
+                        boxShadow: isSelected
+                            ? [
+                                const BoxShadow(
+                                  color: Color(0x40FF7A00),
+                                  blurRadius: 6,
+                                  offset: Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Center(
+                        child: Icon(
+                          cat['icon'] as IconData,
+                          size: 23,
+                          color: isSelected ? Colors.white : const Color(0xFF555555),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        catName,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.w500,
-                          color: isSelected
-                              ? Colors.orange
-                              : Colors.grey.shade700,
-                        ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      catName,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected ? const Color(0xFFFF7A00) : const Color(0xFF424242),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -1134,56 +1185,124 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildFilterChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFFFF3E0) : const Color(0xFFF7F7F8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFFF9800) : const Color(0xFFE5E5E5),
+            width: isSelected ? 1.2 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? const Color(0xFFE65100) : const Color(0xFF555555),
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildRestaurantSection() {
+    final displayedRestaurants = _onlyOpen
+        ? _restaurants.where((r) => r.isAcceptingOrders).toList()
+        : _restaurants;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Section Title & Counter
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                _selectedCategory == 'Tất cả'
-                    ? 'Nhà hàng gần bạn'
-                    : 'Danh mục: $_selectedCategory',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+              Row(
+                children: [
+                  Text(
+                    _selectedCategory == 'Tất cả'
+                        ? 'Quán ngon quanh đây'
+                        : 'Món $_selectedCategory',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF212121),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${displayedRestaurants.length}',
+                      style: TextStyle(
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               if (_searchController.text.isNotEmpty)
                 Text(
-                  'Kết quả cho "${_searchController.text}"',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  'Kết quả: "${_searchController.text}"',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
                 ),
             ],
           ),
-          const SizedBox(height: 16),
-          if (_searchController.text.trim().isNotEmpty) ...[
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
+          const SizedBox(height: 10),
+
+          // Quick Filter Chips (Always visible!)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
               children: [
-                ChoiceChip(
-                  label: const Text('Liên quan nhất'),
-                  selected: _restaurantSort == 'relevance',
-                  onSelected: (_) => _selectRestaurantSort('relevance'),
+                _buildFilterChip(
+                  label: 'Gợi ý',
+                  isSelected: _restaurantSort == 'relevance',
+                  onTap: () => _selectRestaurantSort('relevance'),
                 ),
-                ChoiceChip(
-                  label: const Text('Gần tôi nhất'),
-                  selected: _restaurantSort == 'distance',
-                  onSelected: (_) => _selectRestaurantSort('distance'),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  label: 'Gần tôi 🛵',
+                  isSelected: _restaurantSort == 'distance',
+                  onTap: () => _selectRestaurantSort('distance'),
                 ),
-                ChoiceChip(
-                  label: const Text('Đánh giá cao nhất'),
-                  selected: _restaurantSort == 'rating',
-                  onSelected: (_) => _selectRestaurantSort('rating'),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  label: 'Đánh giá cao ⭐',
+                  isSelected: _restaurantSort == 'rating',
+                  onTap: () => _selectRestaurantSort('rating'),
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  label: 'Đang mở 🟢',
+                  isSelected: _onlyOpen,
+                  onTap: () => setState(() => _onlyOpen = !_onlyOpen),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-          ],
+          ),
+          const SizedBox(height: 12),
+
+          // Loading, Error, Empty or List
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 40),
@@ -1192,72 +1311,17 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
           else if (_errorMessage != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 36),
-                  const SizedBox(height: 8),
-                  Text(
-                    _errorMessage!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: () => _fetchData(),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Thử lại'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else if (_restaurants.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                children: [
-                  const Text('🔍', style: TextStyle(fontSize: 48)),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Không tìm thấy nhà hàng hoặc món ăn phù hợp gần địa chỉ này.',
-                    style: TextStyle(color: Colors.grey, fontSize: 15),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () {
-                      _searchController.clear();
-                      _selectedCategory = 'Tất cả';
-                      _fetchData();
-                    },
-                    child: const Text(
-                      'Đặt lại bộ lọc',
-                      style: TextStyle(color: Colors.orange),
-                    ),
-                  ),
-                ],
-              ),
-            )
+            _buildErrorCard()
+          else if (displayedRestaurants.isEmpty)
+            _buildEmptyCard()
           else
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: _restaurants.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 16),
+              itemCount: displayedRestaurants.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
-                return _buildRestaurantCard(_restaurants[index]);
+                return _buildRestaurantCard(displayedRestaurants[index]);
               },
             ),
         ],
@@ -1265,8 +1329,95 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildErrorCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 36),
+          const SizedBox(height: 8),
+          Text(
+            _errorMessage!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Đang kết nối: ${ApiConfig().baseUrl}',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              ElevatedButton.icon(
+                onPressed: () => _fetchData(),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Thử lại'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => ApiConfig.showConfigDialog(context, onConnected: _fetchData),
+                icon: const Icon(Icons.dns, color: Colors.orange, size: 18),
+                label: const Text('Đổi IP máy chủ', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.orange),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        children: [
+          const Icon(Icons.search_off_rounded, size: 48, color: Colors.grey),
+          const SizedBox(height: 12),
+          const Text(
+            'Không tìm thấy quán phù hợp gần địa chỉ này.',
+            style: TextStyle(color: Colors.grey, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () {
+              _searchController.clear();
+              setState(() {
+                _selectedCategory = 'Tất cả';
+                _onlyOpen = false;
+                _restaurantSort = 'relevance';
+              });
+              _fetchData();
+            },
+            child: const Text(
+              'Đặt lại bộ lọc',
+              style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRestaurantCard(ApiRestaurant restaurant) {
-    // Tính khoảng cách từ địa chỉ giao hàng được chọn tới nhà hàng
     double? distFromDelivery;
     if (_selectedLat != 0 &&
         restaurant.latitude != null &&
@@ -1279,232 +1430,218 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // Tách danh sách món ăn từ tất cả danh mục của nhà hàng
-    final allMenuItems = <ApiMenuItem>[];
-    for (var cat in restaurant.categories) {
-      allMenuItems.addAll(cat.items);
-    }
+    final sampleItems = restaurant.categories
+        .expand((c) => c.items)
+        .take(2)
+        .toList();
 
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => RestaurantDetailScreen(
-              restaurant: restaurant,
-              userLat: _selectedLat != 0 ? _selectedLat : null,
-              userLng: _selectedLng != 0 ? _selectedLng : null,
-              userAddress: _selectedAddressName != 'Chưa chọn địa chỉ giao hàng' ? _selectedAddressName : null,
-            ),
-          ),
-        );
-      },
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withValues(alpha: 0.06),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Thông tin nhà hàng
-            Row(
-              children: [
-                Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Center(
-                    child:
-                        restaurant.imageUrl != null &&
-                            restaurant.imageUrl!.isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Image.network(
-                              restaurant.imageUrl!,
-                              width: 70,
-                              height: 70,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => const Text(
-                                '🏪',
-                                style: TextStyle(fontSize: 36),
-                              ),
-                            ),
-                          )
-                        : const Text('🏪', style: TextStyle(fontSize: 36)),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        restaurant.name,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        restaurant.address,
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 13,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            restaurant.averageRating > 0
-                                ? restaurant.averageRating.toStringAsFixed(1)
-                                : 'Mới',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                          if (distFromDelivery != null) ...[
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade50,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.near_me,
-                                    color: Colors.orange,
-                                    size: 12,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    '${distFromDelivery.toStringAsFixed(1)} km',
-                                    style: const TextStyle(
-                                      color: Colors.orange,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(width: 10),
-                          Icon(
-                            restaurant.isAcceptingOrders
-                                ? Icons.circle
-                                : Icons.circle_outlined,
-                            size: 10,
-                            color: restaurant.isAcceptingOrders
-                                ? Colors.green
-                                : Colors.red,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            restaurant.isAcceptingOrders ? 'Đang mở' : 'Đóng',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: restaurant.isAcceptingOrders
-                                  ? Colors.green
-                                  : Colors.red,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+    final isOpen = restaurant.isAcceptingOrders;
 
-            // Danh sách món ăn nổi bật của nhà hàng (nếu có)
-            if (allMenuItems.isNotEmpty) ...[
-              const Divider(height: 24),
-              const Text(
-                'Món ăn nổi bật:',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RestaurantDetailScreen(
+                restaurant: restaurant,
+                userLat: _selectedLat != 0 ? _selectedLat : null,
+                userLng: _selectedLng != 0 ? _selectedLng : null,
+                userAddress: _selectedAddressName != 'Chưa chọn địa chỉ giao hàng' ? _selectedAddressName : null,
               ),
-              const SizedBox(height: 8),
-              Column(
-                children: allMenuItems
-                    .take(3)
-                    .map((item) => _buildMenuItemRow(item))
-                    .toList(),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade100, width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMenuItemRow(ApiMenuItem item) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.restaurant_menu,
-                  size: 16,
-                  color: Colors.orange,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    item.name,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Thumbnail with Status Badge
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 88,
+                      height: 88,
+                      color: Colors.orange.shade50,
+                      child: restaurant.imageUrl != null && restaurant.imageUrl!.isNotEmpty
+                          ? Image.network(
+                              restaurant.imageUrl!,
+                              width: 88,
+                              height: 88,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => Icon(
+                                Icons.storefront_rounded,
+                                size: 36,
+                                color: Colors.orange.shade300,
+                              ),
+                            )
+                          : Icon(
+                              Icons.storefront_rounded,
+                              size: 36,
+                              color: Colors.orange.shade300,
+                            ),
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
+                  Positioned(
+                    bottom: 4,
+                    left: 4,
+                    right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isOpen ? const Color(0xDD00A86B) : const Color(0xDD757575),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isOpen ? 'Đang mở' : 'Tạm đóng',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+
+              // Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      restaurant.name,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF212121),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+
+                    // Rating, Reviews & Distance
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded, color: Color(0xFFFFB300), size: 16),
+                        const SizedBox(width: 2),
+                        Text(
+                          restaurant.averageRating > 0
+                              ? restaurant.averageRating.toStringAsFixed(1)
+                              : 'Mới',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF212121),
+                          ),
+                        ),
+                        if (restaurant.reviewCount > 0) ...[
+                          Text(
+                            ' (${restaurant.reviewCount})',
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                          ),
+                        ],
+                        const SizedBox(width: 6),
+                        Text('•', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                        const SizedBox(width: 6),
+                        Icon(Icons.directions_bike_rounded, size: 13, color: Colors.grey.shade600),
+                        const SizedBox(width: 3),
+                        Text(
+                          distFromDelivery != null
+                              ? '${distFromDelivery.toStringAsFixed(1)} km'
+                              : 'Gần bạn',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                        ),
+                        if (distFromDelivery != null) ...[
+                          const SizedBox(width: 6),
+                          Text('•', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${(15 + (distFromDelivery * 3.5).toInt()).clamp(15, 50)}p',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+
+                    // Address
+                    Text(
+                      restaurant.address,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+
+                    // Featured items / Promo chips
+                    if (sampleItems.isNotEmpty)
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: sampleItems.map((item) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF4EB),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFFFDEC5), width: 0.8),
+                            ),
+                            child: Text(
+                              '${item.name} • ${item.price.toInt()}k',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: Color(0xFFE65100),
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Freeship đơn từ 50k',
+                          style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                        ),
+                      ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          Text(
-            '${item.price.toInt().toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]}.')}đ',
-            style: const TextStyle(
-              color: Colors.orange,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1810,17 +1947,44 @@ class _AddressInputDialogState extends State<_AddressInputDialog> {
                 items: const [
                   DropdownMenuItem(
                     value: 'Nhà riêng',
-                    child: Text('🏠 Nhà riêng'),
+                    child: Row(
+                      children: [
+                        Icon(Icons.home_outlined, size: 20, color: Colors.orange),
+                        SizedBox(width: 8),
+                        Text('Nhà riêng'),
+                      ],
+                    ),
                   ),
                   DropdownMenuItem(
                     value: 'Công ty',
-                    child: Text('🏢 Công ty'),
+                    child: Row(
+                      children: [
+                        Icon(Icons.business_outlined, size: 20, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Text('Công ty'),
+                      ],
+                    ),
                   ),
                   DropdownMenuItem(
                     value: 'Căn hộ',
-                    child: Text('🏬 Căn hộ'),
+                    child: Row(
+                      children: [
+                        Icon(Icons.apartment_outlined, size: 20, color: Colors.purple),
+                        SizedBox(width: 8),
+                        Text('Căn hộ'),
+                      ],
+                    ),
                   ),
-                  DropdownMenuItem(value: 'Khác', child: Text('📍 Khác')),
+                  DropdownMenuItem(
+                    value: 'Khác',
+                    child: Row(
+                      children: [
+                        Icon(Icons.location_on_outlined, size: 20, color: Colors.grey),
+                        SizedBox(width: 8),
+                        Text('Khác'),
+                      ],
+                    ),
+                  ),
                 ],
                 onChanged: (value) {
                   if (value != null) {

@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using SoopiFoodBE.Hubs;
 using SoopiFoodBE.Contracts;
 using SoopiFoodBE.DataAccess;
 using SoopiFoodBE.DataAccess.Repositories;
@@ -11,13 +13,13 @@ public interface IOrderService
     Task<ShoppingCart> Cart(Guid userId, CancellationToken ct);
     Task<ShoppingCart> AddCartLine(Guid userId, CartLineRequest input, CancellationToken ct);
     Task<FoodOrder> Checkout(Guid userId, CheckoutRequest input, CancellationToken ct);
-    Task<FoodOrder> CreateDirect(Guid userId, CreateDirectOrderRequest input, CancellationToken ct);
+    Task<FoodOrder> CreateDirect(Guid userId, DirectOrderRequest input, CancellationToken ct);
     Task<List<FoodOrder>> History(Guid userId, CancellationToken ct);
     Task<FoodOrder?> Track(Guid userId, Guid orderId, CancellationToken ct);
     Task<bool> UpdateDelivery(Guid actorId, Guid orderId, DeliveryUpdate input, CancellationToken ct);
 }
 
-public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : IOrderService
+public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHubContext<OrderHub> hubContext) : IOrderService
 {
     public async Task<ShoppingCart> Cart(Guid userId, CancellationToken ct)
     {
@@ -147,6 +149,13 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
         var restaurant = await db.Restaurants.FindAsync([cart.RestaurantId], ct)
             ?? throw new KeyNotFoundException("Restaurant not found");
 
+        var paymentMethod = (input.PaymentMethod ?? "").ToLower() switch
+        {
+            var p when p.Contains("card") || p.Contains("thẻ") || p.Contains("bank") => "Card",
+            var p when p.Contains("wallet") || p.Contains("ví") => "EWallet",
+            _ => "Cash"
+        };
+
         var order = new FoodOrder
         {
             CustomerId = userId,
@@ -158,8 +167,8 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
             DeliveryFee = 15000,
             TotalAmount = subtotal - discount + 15000,
             CouponCode = coupon?.Code,
-            PaymentMethod = input.PaymentMethod,
-            PaymentStatus = input.PaymentMethod == "Cash" ? "Unpaid" : "Pending",
+            PaymentMethod = paymentMethod,
+            PaymentStatus = paymentMethod == "Cash" ? "Unpaid" : "Paid",
             Note = input.Note,
             Items = cart.Items.Select(item => new OrderItem
             {
@@ -176,7 +185,7 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
         db.Payments.Add(new Payment
         {
             Order = order,
-            Method = input.PaymentMethod,
+            Method = paymentMethod,
             Amount = order.TotalAmount,
             Status = order.PaymentStatus
         });
@@ -184,6 +193,182 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
         db.CartItems.RemoveRange(cart.Items);
         cart.RestaurantId = null;
         await db.SaveChangesAsync(ct);
+        await BroadcastNewOrderAsync(order, restaurant, ct);
+        return order;
+    }
+
+    public async Task<FoodOrder> CreateDirect(
+        Guid userId,
+        DirectOrderRequest input,
+        CancellationToken ct)
+    {
+        var user = await db.Users.FindAsync([userId], ct);
+        if (user is null)
+        {
+            user = new AppUser
+            {
+                Id = userId,
+                Role = "Customer",
+                FullName = "Khách hàng SOOPI",
+                Email = $"{userId}@soopi.vn",
+                CreatedAt = DateTime.UtcNow
+            };
+            db.Users.Add(user);
+        }
+
+        if (input.Items == null || input.Items.Count == 0)
+            throw new ArgumentException("Items cannot be empty");
+
+        Restaurant? restaurant = null;
+        if (input.RestaurantId != Guid.Empty)
+        {
+            restaurant = await db.Restaurants.FindAsync([input.RestaurantId], ct);
+        }
+        if (restaurant is null)
+        {
+            restaurant = await db.Restaurants.FirstOrDefaultAsync(ct)
+                ?? throw new KeyNotFoundException("Restaurant not found");
+        }
+
+        var menuItemIds = input.Items.Select(i => i.MenuItemId).Distinct().ToList();
+        var menuItems = await db.MenuItems
+            .Where(m => menuItemIds.Contains(m.Id))
+            .ToDictionaryAsync(m => m.Id, ct);
+
+        var orderItems = new List<OrderItem>();
+        decimal subtotal = 0;
+
+        foreach (var item in input.Items)
+        {
+            if (item.Quantity <= 0) continue;
+            decimal unitPrice = 0;
+            string itemName = "Món ăn";
+            if (menuItems.TryGetValue(item.MenuItemId, out var mi))
+            {
+                unitPrice = mi.Price;
+                itemName = mi.Name;
+            }
+            subtotal += unitPrice * item.Quantity;
+            orderItems.Add(new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                MenuItemId = item.MenuItemId != Guid.Empty ? item.MenuItemId : null,
+                ItemName = itemName,
+                UnitPrice = unitPrice,
+                Quantity = item.Quantity,
+                Note = item.Note ?? ""
+            });
+        }
+
+        if (orderItems.Count == 0)
+            throw new ArgumentException("No valid items found for the order");
+
+        // Address resolution
+        UserAddress? address = null;
+        if (input.AddressId.HasValue && input.AddressId.Value != Guid.Empty)
+        {
+            address = await db.Addresses.FirstOrDefaultAsync(
+                a => a.Id == input.AddressId.Value && a.UserId == userId, ct);
+        }
+
+        if (address == null)
+        {
+            address = await db.Addresses.FirstOrDefaultAsync(
+                a => a.UserId == userId && a.IsDefault, ct)
+                ?? await db.Addresses.FirstOrDefaultAsync(
+                    a => a.UserId == userId, ct);
+        }
+
+        var deliveryAddress = !string.IsNullOrWhiteSpace(input.DeliveryAddress)
+            ? input.DeliveryAddress
+            : (address?.FullAddress ?? "Địa chỉ nhận hàng mặc định");
+
+        // Discount calculation
+        var discount = 0m;
+        Coupon? coupon = null;
+        if (!string.IsNullOrWhiteSpace(input.CouponCode))
+        {
+            coupon = await db.Coupons.FirstOrDefaultAsync(
+                c => c.Code == input.CouponCode
+                    && c.IsActive
+                    && (c.StartsAt == null || c.StartsAt <= DateTime.UtcNow)
+                    && (c.EndsAt == null || c.EndsAt >= DateTime.UtcNow)
+                    && (c.UsageLimit == null || c.UsedCount < c.UsageLimit),
+                ct);
+
+            if (coupon != null && subtotal >= coupon.MinOrderAmount)
+            {
+                discount = coupon.DiscountType == "Percent"
+                    ? subtotal * coupon.DiscountValue / 100
+                    : coupon.DiscountValue;
+
+                if (coupon.MaxDiscount.HasValue)
+                    discount = Math.Min(discount, coupon.MaxDiscount.Value);
+
+                discount = Math.Min(discount, subtotal);
+                coupon.UsedCount++;
+            }
+        }
+
+        // Assign a shipper if available
+        var shipper = await db.Users.FirstOrDefaultAsync(u => u.Role == "Shipper", ct);
+
+        var paymentMethod = (input.PaymentMethod ?? "").ToLower() switch
+        {
+            var p when p.Contains("card") || p.Contains("thẻ") || p.Contains("bank") => "Card",
+            var p when p.Contains("wallet") || p.Contains("ví") => "EWallet",
+            _ => "Cash"
+        };
+
+        const decimal deliveryFee = 16000m;
+        var order = new FoodOrder
+        {
+            Id = Guid.NewGuid(),
+            OrderCode = "SP-" + Random.Shared.Next(1000, 9999).ToString(),
+            CustomerId = userId,
+            RestaurantId = restaurant.Id,
+            AddressId = address?.Id,
+            DeliveryAddress = deliveryAddress,
+            Subtotal = subtotal,
+            DiscountAmount = discount,
+            DeliveryFee = deliveryFee,
+            TotalAmount = subtotal - discount + deliveryFee,
+            CouponCode = coupon?.Code,
+            PaymentMethod = paymentMethod,
+            PaymentStatus = paymentMethod == "Cash" ? "Unpaid" : "Paid",
+            Note = input.Note ?? "",
+            Status = "Preparing",
+            ShipperId = shipper?.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Items = orderItems
+        };
+
+        order.StatusHistory.Add(new OrderStatusHistory { Id = Guid.NewGuid(), Status = "Pending", Note = "Đã tiếp nhận đơn" });
+        order.StatusHistory.Add(new OrderStatusHistory { Id = Guid.NewGuid(), Status = "Preparing", Note = "Quán đang chuẩn bị món" });
+
+        db.Orders.Add(order);
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(),
+            Order = order,
+            Method = paymentMethod,
+            Amount = order.TotalAmount,
+            Status = order.PaymentStatus,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync(ct);
+        await BroadcastNewOrderAsync(order, restaurant, ct);
+
+        // Load navigations for caller
+        await db.Entry(order).Reference(o => o.Restaurant).LoadAsync(ct);
+        if (order.ShipperId.HasValue)
+        {
+            await db.Entry(order).Reference(o => o.Shipper).LoadAsync(ct);
+        }
+        await db.Entry(order).Collection(o => o.Items).LoadAsync(ct);
+
         return order;
     }
 
@@ -260,131 +445,49 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders) : I
         return true;
     }
 
-    public async Task<FoodOrder> CreateDirect(
-        Guid userId,
-        CreateDirectOrderRequest input,
-        CancellationToken ct)
+
+
+    private async Task BroadcastNewOrderAsync(FoodOrder order, Restaurant restaurant, CancellationToken ct)
     {
-        var user = await db.Users.FindAsync([userId], ct);
-        if (user is null)
+        try
         {
-            user = new AppUser
+            var payload = new
             {
-                Id = userId,
-                Role = "Customer",
-                FullName = "Khách hàng SOOPI",
-                Email = $"{userId}@soopi.vn",
-                CreatedAt = DateTime.UtcNow
-            };
-            db.Users.Add(user);
-        }
-
-        Restaurant? restaurant = null;
-        if (input.RestaurantId.HasValue)
-        {
-            restaurant = await db.Restaurants.FindAsync([input.RestaurantId.Value], ct);
-        }
-        if (restaurant is null && !string.IsNullOrWhiteSpace(input.RestaurantName))
-        {
-            var cleanName = input.RestaurantName.Trim().ToLower();
-            restaurant = await db.Restaurants.FirstOrDefaultAsync(
-                r => r.Name.ToLower().Contains(cleanName) || cleanName.Contains(r.Name.ToLower()),
-                ct);
-        }
-        if (restaurant is null)
-        {
-            restaurant = await db.Restaurants.FirstOrDefaultAsync(ct)
-                ?? throw new InvalidOperationException("Chưa có nhà hàng khả dụng trong hệ thống.");
-        }
-
-        var shipper = await db.Users.FirstOrDefaultAsync(u => u.Role == "Shipper", ct);
-
-        var subtotal = input.Items != null && input.Items.Count > 0
-            ? input.Items.Sum(i => i.Price * i.Quantity)
-            : 50000m;
-        var deliveryFee = input.DeliveryFee > 0 ? input.DeliveryFee : 16000m;
-        var total = subtotal + deliveryFee;
-
-        var paymentMethod = "Cash";
-        if (!string.IsNullOrWhiteSpace(input.PaymentMethod))
-        {
-            var pmLower = input.PaymentMethod.ToLower();
-            if (pmLower.Contains("card") || pmLower.Contains("thẻ"))
-                paymentMethod = "Card";
-            else if (pmLower.Contains("wallet") || pmLower.Contains("ví") || pmLower.Contains("momo") || pmLower.Contains("zalopay"))
-                paymentMethod = "EWallet";
-            else
-                paymentMethod = "Cash";
-        }
-
-        var order = new FoodOrder
-        {
-            Id = Guid.NewGuid(),
-            OrderCode = "SP-" + Random.Shared.Next(1000, 9999).ToString(),
-            CustomerId = user.Id,
-            RestaurantId = restaurant.Id,
-            DeliveryAddress = string.IsNullOrWhiteSpace(input.DeliveryAddress) ? "Địa chỉ nhận hàng" : input.DeliveryAddress,
-            Subtotal = subtotal,
-            DeliveryFee = deliveryFee,
-            DiscountAmount = 0,
-            TotalAmount = total,
-            PaymentMethod = paymentMethod,
-            PaymentStatus = paymentMethod == "Cash" ? "Unpaid" : "Pending",
-            Status = "Preparing",
-            Note = input.Note ?? "",
-            ShipperId = shipper?.Id,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            Items = input.Items != null && input.Items.Count > 0
-                ? input.Items.Select(i => new OrderItem
+                orderId = order.Id,
+                orderCode = order.OrderCode,
+                restaurantId = restaurant.Id,
+                restaurantName = restaurant.Name,
+                customerId = order.CustomerId,
+                customerName = order.Address?.RecipientName ?? "Khách hàng",
+                customerPhone = order.Address?.Phone ?? "",
+                deliveryAddress = order.DeliveryAddress,
+                subtotal = order.Subtotal,
+                discountAmount = order.DiscountAmount,
+                deliveryFee = order.DeliveryFee,
+                totalAmount = order.TotalAmount,
+                paymentMethod = order.PaymentMethod,
+                paymentStatus = order.PaymentStatus,
+                note = order.Note,
+                status = order.Status,
+                createdAt = order.CreatedAt,
+                items = order.Items.Select(i => new
                 {
-                    Id = Guid.NewGuid(),
-                    MenuItemId = i.MenuItemId,
-                    ItemName = i.Name,
-                    UnitPrice = i.Price,
-                    Quantity = i.Quantity,
-                    Note = i.Note ?? ""
+                    itemName = i.ItemName,
+                    quantity = i.Quantity,
+                    unitPrice = i.UnitPrice,
+                    note = i.Note
                 }).ToList()
-                : new List<OrderItem>
-                {
-                    new()
-                    {
-                        Id = Guid.NewGuid(),
-                        ItemName = "Món ăn tổng hợp",
-                        UnitPrice = subtotal,
-                        Quantity = 1,
-                        Note = ""
-                    }
-                }
-        };
+            };
 
-        order.StatusHistory.Add(new OrderStatusHistory
-        {
-            Id = Guid.NewGuid(),
-            Status = "Preparing",
-            Note = "Quán đang chuẩn bị món"
-        });
+            await hubContext.Clients.Group($"restaurant_{restaurant.Id}")
+                .SendAsync("NewOrderReceived", payload, cancellationToken: ct);
 
-        db.Orders.Add(order);
-        db.Payments.Add(new Payment
-        {
-            Id = Guid.NewGuid(),
-            Order = order,
-            Method = order.PaymentMethod,
-            Amount = total,
-            Status = order.PaymentStatus,
-            CreatedAt = DateTime.UtcNow
-        });
-
-        await db.SaveChangesAsync(ct);
-
-        await db.Entry(order).Reference(o => o.Restaurant).LoadAsync(ct);
-        if (order.ShipperId.HasValue)
-        {
-            await db.Entry(order).Reference(o => o.Shipper).LoadAsync(ct);
+            await hubContext.Clients.Group($"user_{order.CustomerId}")
+                .SendAsync("OrderCreated", payload, cancellationToken: ct);
         }
-        await db.Entry(order).Collection(o => o.Items).LoadAsync(ct);
-
-        return order;
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SignalR broadcast error: {ex.Message}");
+        }
     }
 }

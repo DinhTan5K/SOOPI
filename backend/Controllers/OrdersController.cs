@@ -57,14 +57,23 @@ public sealed class OrdersController(
     [HttpPost("orders/direct")]
     public async Task<IActionResult> CreateDirect(
         Guid userId,
-        [FromBody] CreateDirectOrderRequest input,
+        [FromBody] DirectOrderRequest input,
         CancellationToken ct)
     {
         try
         {
-            return Ok(await orders.CreateDirect(userId, input, ct));
+            var order = await orders.CreateDirect(userId, input, ct);
+            return Ok(order);
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return NotFound(new { error = exception.Message });
         }
         catch (InvalidOperationException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
+        catch (ArgumentException exception)
         {
             return BadRequest(new { error = exception.Message });
         }

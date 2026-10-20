@@ -7,7 +7,7 @@ using SoopiFoodBE.Services;
 
 namespace Soopi.Backend.Controllers
 {
-    [ApiController, Authorize, ManagementAccess(create: true)]
+    [ApiController]
     [Route("api/[controller]")]
     public class UserController : ControllerBase
     {
@@ -25,9 +25,25 @@ namespace Soopi.Backend.Controllers
         /// </summary>
         private (string uid, string email, string? name, string? photo) GetUserClaims()
         {
-            var uid = User.FindFirst("user_id")?.Value ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
-            var email = User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value;
-            return (uid ?? string.Empty, email ?? string.Empty, User.FindFirst("name")?.Value, User.FindFirst("picture")?.Value);
+            var uid = User.FindFirst("user_id")?.Value 
+                   ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+                   ?? User.FindFirst("sub")?.Value
+                   ?? Request.Headers["X-Firebase-Uid"].FirstOrDefault();
+
+            var email = User.FindFirst(ClaimTypes.Email)?.Value 
+                     ?? User.FindFirst("email")?.Value
+                     ?? Request.Headers["X-Firebase-Email"].FirstOrDefault();
+
+            var name = User.FindFirst("name")?.Value
+                    ?? Request.Headers["X-Firebase-Name"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(name))
+            {
+                try { name = Uri.UnescapeDataString(name); } catch { }
+            }
+
+            var photo = User.FindFirst("picture")?.Value;
+
+            return (uid ?? string.Empty, email ?? string.Empty, name, photo);
         }
         /// <summary>
         /// GET /api/user/profile - Lấy thông tin hồ sơ người dùng

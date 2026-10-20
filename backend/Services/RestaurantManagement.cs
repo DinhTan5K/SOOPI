@@ -9,7 +9,7 @@ public sealed class RestaurantManagement(SoopiDbContext db, CurrentAccount accou
 {
     public async Task<Restaurant> Owned(Guid id, CancellationToken ct)
     {
-        var actor = await accounts.Get(ct: ct);
+        var actor = await accounts.Owner(ct: ct);
         var restaurant = await db.Restaurants.Include(r => r.Categories).ThenInclude(c => c.Items)
             .Include(r => r.OpeningHours).SingleOrDefaultAsync(r => r.Id == id && r.OwnerId == actor.Id, ct)
             ?? throw new ManagementException(404, "Restaurant not found.");
@@ -60,6 +60,11 @@ public sealed class RestaurantManagement(SoopiDbContext db, CurrentAccount accou
     public async Task<object> Create(RestaurantInput input, CancellationToken ct)
     {
         var user = await accounts.Get(create: true, ct: ct);
+        if (user.Role == "Customer")
+        {
+            user.Role = "Owner";
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+        }
         var restaurant = new Restaurant { Id = Guid.NewGuid(), OwnerId = user.Id, IsAcceptingOrders = false };
         Apply(restaurant, input);
         restaurant.Categories = new[] { "Món chính", "Ăn nhẹ", "Đồ uống" }.Select((name, index) =>

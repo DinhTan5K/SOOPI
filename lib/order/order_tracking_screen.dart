@@ -5,7 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
 import 'order_data.dart';
+import '../services/order_socket_service.dart';
 import 'order_review_screen.dart';
 import 'shipper_chat_screen.dart';
 import '../services/geocoding_service.dart';
@@ -27,6 +29,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
 
   late AnimationController _animController;
   late Animation<double> _shipperProgress;
+  StreamSubscription? _socketStatusSub;
 
   LatLng? _savedUserPos;
   String? _savedUserAddress;
@@ -46,6 +49,34 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     );
 
     _orderData.syncTrack(widget.orderId);
+
+    // Lắng nghe cập nhật đơn hàng thời gian thực qua SignalR
+    OrderSocketService().joinOrder(widget.orderId);
+    _socketStatusSub = OrderSocketService().onOrderStatus.listen((data) {
+      if (!mounted) return;
+      final incomingId = (data['orderId'] ?? data['OrderId'])?.toString().toLowerCase();
+      final myId = widget.orderId.toLowerCase();
+      if (incomingId == null || incomingId == myId) {
+        final newStatusStr = (data['newStatus'] ?? data['status'] ?? data['Status'])?.toString().toLowerCase();
+        final order = _orderData.findById(widget.orderId);
+        if (order != null && newStatusStr != null) {
+          if (newStatusStr == 'delivered' || newStatusStr == 'completed') {
+            order.status = OrderStatus.completed;
+            order.estimatedDeliveryMinutes = 0;
+          } else if (newStatusStr == 'delivering') {
+            order.status = OrderStatus.delivering;
+            order.estimatedDeliveryMinutes = 15;
+          } else if (newStatusStr == 'preparing') {
+            order.status = OrderStatus.preparing;
+            order.estimatedDeliveryMinutes = 20;
+          } else if (newStatusStr == 'cancelled') {
+            order.status = OrderStatus.cancelled;
+          }
+          setState(() {});
+        }
+        _orderData.syncTrack(widget.orderId);
+      }
+    });
   }
 
   Future<void> _loadSavedUserLocation() async {
@@ -167,6 +198,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
 
   @override
   void dispose() {
+    _socketStatusSub?.cancel();
+    OrderSocketService().leaveOrder(widget.orderId);
     _animController.dispose();
     _mapController.dispose();
     super.dispose();
@@ -409,7 +442,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                         height: 75,
                         alignment: Alignment.topCenter,
                         child: _buildLocationPin(
-                          emoji: '🏪',
+                          icon: Icons.storefront_rounded,
                           label: order.restaurantName,
                           color: Colors.deepOrange,
                           sublabel: 'Điểm lấy món',
@@ -422,7 +455,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
                         height: 75,
                         alignment: Alignment.topCenter,
                         child: _buildLocationPin(
-                          emoji: '📍',
+                          icon: Icons.location_on_rounded,
                           label: 'Vị trí của bạn',
                           color: Colors.green.shade700,
                           sublabel: _savedUserAddress != null && _savedUserAddress!.isNotEmpty
@@ -522,7 +555,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
   }
 
   Widget _buildLocationPin({
-    required String emoji,
+    required IconData icon,
     required String label,
     required Color color,
     required String sublabel,
@@ -571,7 +604,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               ),
             ],
           ),
-          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 16))),
+          child: Center(child: Icon(icon, color: Colors.white, size: 18)),
         ),
       ],
     );
@@ -588,7 +621,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(
-            isWaiting ? 'Chờ lấy món' : 'Đang giao 🛵',
+            isWaiting ? 'Chờ lấy món' : 'Đang giao hàng',
             style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
           ),
         ),
@@ -842,7 +875,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '🎉 Đơn hàng đã giao thành công!',
+            'Đơn hàng đã giao thành công!',
             style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
