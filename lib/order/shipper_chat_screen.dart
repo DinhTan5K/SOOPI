@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'order_data.dart';
 
@@ -13,6 +15,18 @@ class ChatMessage {
     required this.isMe,
     required this.timestamp,
   });
+
+  Map<String, dynamic> toJson() => {
+    'text': text,
+    'isMe': isMe,
+    'timestamp': timestamp.toIso8601String(),
+  };
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+    text: json['text'] as String,
+    isMe: json['isMe'] as bool,
+    timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ?? DateTime.now(),
+  );
 }
 
 class ShipperChatScreen extends StatefulWidget {
@@ -35,32 +49,76 @@ class _ShipperChatScreenState extends State<ShipperChatScreen> {
   final List<ChatMessage> _messages = [];
 
   final List<String> _quickReplies = [
-    'Đến nơi gọi mình nhé 📞',
-    'Cho mình xin thêm đũa & thìa 🥢',
-    'Cho mình xin thêm tương ớt 🌶️',
-    'Để ở bàn bảo vệ giúp mình 🏢',
-    'Mình đang đợi ở sảnh nhé 🚪',
-    'Tài xế đi đường cẩn thận nhé 🛵',
+    'Đến nơi gọi mình nhé',
+    'Cho mình xin thêm đũa & thìa',
+    'Cho mình xin thêm tương ớt',
+    'Để ở bàn bảo vệ giúp mình',
+    'Mình đang đợi ở sảnh nhé',
+    'Tài xế đi đường cẩn thận nhé',
   ];
 
   @override
   void initState() {
     super.initState();
-    // Khởi tạo lời chào mở đầu từ tài xế
-    _messages.add(
-      ChatMessage(
-        text: 'Chào bạn! Tôi là ${widget.shipper.name}, tài xế nhận giao đơn #${widget.order.id}.',
-        isMe: false,
-        timestamp: DateTime.now().subtract(const Duration(minutes: 3)),
-      ),
-    );
-    _messages.add(
-      ChatMessage(
-        text: 'Tôi đang di chuyển đến quán lấy món. Bạn có dặn dò gì thêm cứ nhắn cho tôi nhé!',
-        isMe: false,
-        timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
-      ),
-    );
+    _loadMessagesFromPrefs();
+  }
+
+  String get _prefsKey => 'shipper_chat_${widget.order.id}';
+
+  Future<void> _loadMessagesFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(raw);
+        final loaded = list
+            .map((item) => ChatMessage.fromJson(item as Map<String, dynamic>))
+            .toList();
+        if (loaded.isNotEmpty && mounted) {
+          setState(() {
+            _messages.clear();
+            _messages.addAll(loaded);
+          });
+          _scrollToBottom();
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Lỗi tải lịch sử chat: $e');
+    }
+
+    // Nếu chưa từng có tin nhắn lưu trong máy, tạo tin nhắn mở đầu từ tài xế
+    if (mounted) {
+      setState(() {
+        _messages.clear();
+        _messages.add(
+          ChatMessage(
+            text: 'Chào bạn! Tôi là ${widget.shipper.name}, tài xế nhận giao đơn #${widget.order.id}.',
+            isMe: false,
+            timestamp: DateTime.now().subtract(const Duration(minutes: 3)),
+          ),
+        );
+        _messages.add(
+          ChatMessage(
+            text: 'Tôi đang di chuyển đến quán lấy món. Bạn có dặn dò gì thêm cứ nhắn cho tôi nhé!',
+            isMe: false,
+            timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
+          ),
+        );
+      });
+      _saveMessagesToPrefs();
+      _scrollToBottom();
+    }
+  }
+
+  Future<void> _saveMessagesToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(_messages.map((m) => m.toJson()).toList());
+      await prefs.setString(_prefsKey, encoded);
+    } catch (e) {
+      debugPrint('Lỗi lưu lịch sử chat: $e');
+    }
   }
 
   @override
@@ -149,6 +207,7 @@ class _ShipperChatScreenState extends State<ShipperChatScreen> {
         ),
       );
     });
+    _saveMessagesToPrefs();
     _scrollToBottom();
 
     // Mô phỏng tài xế phản hồi tự động sau 1.2s
@@ -181,6 +240,7 @@ class _ShipperChatScreenState extends State<ShipperChatScreen> {
           ),
         );
       });
+      _saveMessagesToPrefs();
       _scrollToBottom();
     });
   }
