@@ -6,6 +6,7 @@ import '../services/profile_api_service.dart';
 import 'merchant_data.dart';
 import 'menu_editor.dart';
 import 'merchant_orders.dart';
+import 'merchant_vouchers.dart';
 import 'menu_photo.dart';
 import 'restaurant_editor.dart';
 
@@ -387,7 +388,10 @@ class _MerchantScreenState extends State<MerchantScreen> {
                     Text(
                       _loadError ?? 'Không thể đọc dữ liệu quán.',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     if (_loadError?.contains('Khách hàng') == true)
@@ -402,7 +406,10 @@ class _MerchantScreenState extends State<MerchantScreen> {
                         label: const Text('Đăng xuất & Quay lại'),
                       )
                     else ...[
-                      FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                      FilledButton(
+                        onPressed: _load,
+                        child: const Text('Thử lại'),
+                      ),
                       if (_data.remote && _data.restaurantId == null)
                         OutlinedButton.icon(
                           onPressed: _saving
@@ -435,6 +442,15 @@ class _MerchantScreenState extends State<MerchantScreen> {
                               restaurantId: _data.restaurantId,
                               api: _data.api,
                             ),
+                            if (_tab == 3)
+                              MerchantVouchers(
+                                key: ValueKey('vouchers-${_data.restaurantId}'),
+                                restaurantId: _data.restaurantId,
+                                api: _data.api,
+                                items: _data.items,
+                              )
+                            else
+                              const SizedBox.shrink(),
                           ],
                         ),
                       ),
@@ -450,6 +466,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
             ? null
             : (value) => setState(() => _tab = value),
         destinations: const [
+          // Keep destination order aligned with the IndexedStack.
           NavigationDestination(
             icon: Icon(Icons.storefront_outlined),
             selectedIcon: Icon(Icons.storefront),
@@ -463,6 +480,11 @@ class _MerchantScreenState extends State<MerchantScreen> {
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: 'Đơn hàng',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.local_offer_outlined),
+            selectedIcon: Icon(Icons.local_offer),
+            label: 'Voucher',
           ),
         ],
       ),

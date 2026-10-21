@@ -1,5 +1,7 @@
 # SOOPI FOOD API
 
+Voucher management, customer listing/preview endpoints and database upgrade: [backend/VOUCHER_API.md](backend/VOUCHER_API.md).
+
 Backend ASP.NET Core Web API (.NET 8) for the existing Flutter app. The API is organized into `Models` (domain entities), `DataAccess/Dao` (EF persistence), `DataAccess/Repositories` (queries), `Services` (business rules), `Contracts` (request DTOs), and `Controllers` (HTTP endpoints). PostgreSQL is the relational database; entity keys are UUIDs.
 
 Restaurant ownership, approval, category/menu management and administrator APIs are documented in [backend/RESTAURANT_API.md](backend/RESTAURANT_API.md). Apply `database/restaurant_management_upgrade.sql` to an existing database before starting this version; existing restaurants require review again.

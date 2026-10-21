@@ -19,7 +19,7 @@ public interface IOrderService
     Task<bool> UpdateDelivery(Guid actorId, Guid orderId, DeliveryUpdate input, CancellationToken ct);
 }
 
-public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHubContext<OrderHub> hubContext) : IOrderService
+public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHubContext<OrderHub> hubContext, VoucherService vouchers) : IOrderService
 {
     public async Task<ShoppingCart> Cart(Guid userId, CancellationToken ct)
     {
@@ -121,28 +121,10 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
 
         if (!string.IsNullOrWhiteSpace(input.CouponCode))
         {
-            coupon = await db.Coupons.FirstOrDefaultAsync(
-                item => item.Code == input.CouponCode
-                    && item.IsActive
-                    && (item.StartsAt == null || item.StartsAt <= DateTime.UtcNow)
-                    && (item.EndsAt == null || item.EndsAt >= DateTime.UtcNow)
-                    && (item.UsageLimit == null || item.UsedCount < item.UsageLimit),
-                ct);
-
-            if (coupon is null || subtotal < coupon.MinOrderAmount)
-            {
-                throw new InvalidOperationException(
-                    "Coupon is invalid or order total is too low");
-            }
-
-            discount = coupon.DiscountType == "Percent"
-                ? subtotal * coupon.DiscountValue / 100
-                : coupon.DiscountValue;
-
-            if (coupon.MaxDiscount.HasValue)
-                discount = Math.Min(discount, coupon.MaxDiscount.Value);
-
-            discount = Math.Min(discount, subtotal);
+            var result = await vouchers.Evaluate(input.CouponCode, cart.RestaurantId!.Value,
+                cart.Items.Select(i => new VoucherLine(i.MenuItemId, i.MenuItem!.Price, i.Quantity)).ToList(), ct);
+            coupon = result.Coupon;
+            discount = result.Discount;
             coupon.UsedCount++;
         }
 
@@ -226,13 +208,12 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
         }
         if (restaurant is null)
         {
-            restaurant = await db.Restaurants.FirstOrDefaultAsync(ct)
-                ?? throw new KeyNotFoundException("Restaurant not found");
+            throw new KeyNotFoundException("Restaurant not found");
         }
 
         var menuItemIds = input.Items.Select(i => i.MenuItemId).Distinct().ToList();
         var menuItems = await db.MenuItems
-            .Where(m => menuItemIds.Contains(m.Id))
+            .Where(m => menuItemIds.Contains(m.Id) && m.Category!.RestaurantId == restaurant.Id && m.IsAvailable)
             .ToDictionaryAsync(m => m.Id, ct);
 
         var orderItems = new List<OrderItem>();
@@ -240,7 +221,8 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
 
         foreach (var item in input.Items)
         {
-            if (item.Quantity <= 0) continue;
+            if (item.Quantity <= 0 || !menuItems.ContainsKey(item.MenuItemId))
+                throw new ArgumentException("Món hoặc số lượng không hợp lệ cho quán đã chọn.");
             decimal unitPrice = 0;
             string itemName = "Món ăn";
             if (menuItems.TryGetValue(item.MenuItemId, out var mi))
@@ -288,26 +270,11 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
         Coupon? coupon = null;
         if (!string.IsNullOrWhiteSpace(input.CouponCode))
         {
-            coupon = await db.Coupons.FirstOrDefaultAsync(
-                c => c.Code == input.CouponCode
-                    && c.IsActive
-                    && (c.StartsAt == null || c.StartsAt <= DateTime.UtcNow)
-                    && (c.EndsAt == null || c.EndsAt >= DateTime.UtcNow)
-                    && (c.UsageLimit == null || c.UsedCount < c.UsageLimit),
-                ct);
-
-            if (coupon != null && subtotal >= coupon.MinOrderAmount)
-            {
-                discount = coupon.DiscountType == "Percent"
-                    ? subtotal * coupon.DiscountValue / 100
-                    : coupon.DiscountValue;
-
-                if (coupon.MaxDiscount.HasValue)
-                    discount = Math.Min(discount, coupon.MaxDiscount.Value);
-
-                discount = Math.Min(discount, subtotal);
-                coupon.UsedCount++;
-            }
+            var result = await vouchers.Evaluate(input.CouponCode, restaurant.Id,
+                orderItems.Select(i => new VoucherLine(i.MenuItemId!.Value, i.UnitPrice, i.Quantity)).ToList(), ct);
+            coupon = result.Coupon;
+            discount = result.Discount;
+            coupon.UsedCount++;
         }
 
         // Assign a shipper if available

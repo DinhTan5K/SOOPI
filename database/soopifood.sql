@@ -118,6 +118,9 @@ CREATE TABLE IF NOT EXISTS "CartItems" (
 );
 
 CREATE TABLE IF NOT EXISTS "Coupons" (
+    "RestaurantId" uuid REFERENCES "Restaurants"("Id") ON DELETE RESTRICT,
+    "MenuItemId" uuid REFERENCES "MenuItems"("Id") ON DELETE RESTRICT,
+    CONSTRAINT "CK_Coupons_Scope" CHECK ("MenuItemId" IS NULL OR "RestaurantId" IS NOT NULL),
     "Id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     "Code" varchar(50) NOT NULL UNIQUE,
     "DiscountType" varchar(20) NOT NULL CHECK ("DiscountType" IN ('Percent', 'Fixed')),
