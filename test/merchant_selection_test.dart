@@ -19,6 +19,9 @@ MerchantData merchant(
       token: () async => 'token',
       client: MockClient((request) async {
         if (request.url.path.endsWith('/me')) return http.Response('{}', 200);
+        if (request.url.path.endsWith('/orders')) {
+          return http.Response('[]', 200);
+        }
         if (request.url.path.endsWith('/restaurants')) {
           final page = int.parse(request.url.queryParameters['page']!);
           final items = paginated
