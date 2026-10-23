@@ -240,9 +240,11 @@ class OrderApiService {
     OrderStatus status;
     switch (rawStatus) {
       case 'preparing':
+      case 'readyforpickup':
         status = OrderStatus.preparing;
         break;
       case 'delivering':
+      case 'pickedup':
         status = OrderStatus.delivering;
         break;
       case 'delivered':

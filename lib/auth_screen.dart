@@ -9,6 +9,7 @@ import 'services/api_config.dart';
 import 'widgets/otp_verification_dialog.dart';
 import 'widgets/forgot_password_dialog.dart';
 import 'merchant/merchant_login_screen.dart';
+import 'shipper/shipper_main_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -69,10 +70,34 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
         await _authService
             .signInWithEmailPassword(email, password)
             .timeout(const Duration(seconds: 15));
+
+        ProfileApiService().clearCache();
+        final profile = await ProfileApiService().getProfile();
+        final role = profile.role.trim().toLowerCase();
+        if (role == 'owner' || role == 'restaurantowner') {
+          await _authService.signOut();
+          ProfileApiService().clearCache();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Tài khoản này là Chủ quán (Owner), không có quyền truy cập giao diện Khách hàng. Vui lòng bấm "Đối tác Chủ quán" để đăng nhập!',
+                ),
+                backgroundColor: Colors.red.shade700,
+              ),
+            );
+          }
+          return;
+        }
+
         if (mounted) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            MaterialPageRoute(
+              builder: (context) => role == 'shipper'
+                  ? const ShipperMainScreen()
+                  : const HomeScreen(),
+            ),
           );
         }
       } else {
@@ -208,6 +233,64 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
       context,
       initialEmail: _emailController.text.trim(),
     );
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final credential = await _authService.signInWithGoogle();
+      if (credential == null) {
+        // Người dùng đã hủy màn hình đăng nhập Google
+        return;
+      }
+
+      try {
+        await ProfileApiService().getProfile();
+      } catch (_) {}
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đăng nhập Google thành công!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        String msg = 'Đăng nhập Google thất bại: ${e.message ?? e.code}';
+        if (e.code == 'account-exists-with-different-credential') {
+          msg = 'Email này đã liên kết với phương thức đăng nhập khác.';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red.shade700),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi đăng nhập Google: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -649,11 +732,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                                     child: _buildSocialPill(
                                       label: 'Google',
                                       iconWidget: _buildGoogleGIcon(),
-                                      onTap: () {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Tính năng Google Sign-In đang được kết nối.')),
-                                        );
-                                      },
+                                      onTap: _isLoading ? null : () => _handleGoogleSignIn(),
                                     ),
                                   ),
                                   const SizedBox(width: 14),
@@ -862,7 +941,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
   Widget _buildSocialPill({
     required String label,
     required Widget iconWidget,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
   }) {
     return InkWell(
       onTap: onTap,

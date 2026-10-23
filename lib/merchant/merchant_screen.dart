@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/order_socket_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/profile_api_service.dart';
@@ -29,6 +31,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
   int _tab = 0;
   String _category = 'Tất cả';
   String _stock = 'Tất cả';
+  StreamSubscription? _merchantSocketSub;
   @override
   void initState() {
     super.initState();
@@ -37,6 +40,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
 
   @override
   void dispose() {
+    _merchantSocketSub?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -59,7 +63,125 @@ class _MerchantScreenState extends State<MerchantScreen> {
     setState(() {
       _draft = _data.hours.map((d) => d.copy()).toList();
       _loading = false;
+      _initSocketListener();
     });
+  }
+
+  void _initSocketListener() {
+    final restId = _data.restaurantId;
+    if (restId == null || restId.isEmpty) return;
+
+    final socket = OrderSocketService();
+    socket.joinRestaurant(restId);
+
+    _merchantSocketSub?.cancel();
+    _merchantSocketSub = socket.onNewOrder.listen((order) {
+      if (!mounted) return;
+      _showIncomingOrderAlert(order);
+    });
+  }
+
+  void _showIncomingOrderAlert(Map<String, dynamic> order) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'CÓ ĐƠN HÀNG MỚI',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.deepOrange),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Mã đơn:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    '#${order['orderCode'] ?? (order['orderId']?.toString().substring(0, 8) ?? '---')}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange, fontSize: 16),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text('Khách hàng: ${order['customerName'] ?? 'Khách hàng'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            if (order['customerPhone'] != null && order['customerPhone'].toString().isNotEmpty)
+              Text('SĐT: ${order['customerPhone']}'),
+            const SizedBox(height: 4),
+            Text('Giao đến: ${order['deliveryAddress'] ?? 'Địa chỉ khách'}', style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+            const Divider(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Tổng thu quán:', style: TextStyle(fontSize: 14)),
+                Text(
+                  '${((order['totalAmount'] as num?)?.toInt() ?? 0).toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]}.')}đ',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18),
+                ),
+              ],
+            ),
+            if (order['note'] != null && order['note'].toString().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Ghi chú: "${order['note']}"', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.redAccent)),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Để sau', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final orderId = order['orderId']?.toString();
+              if (orderId != null && _data.restaurantId != null) {
+                try {
+                  await _data.api.request(
+                    'PATCH',
+                    'restaurants/${_data.restaurantId}/orders/$orderId/status',
+                    {'status': 'Preparing'},
+                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Đã nhận đơn! Đơn hàng đang trong mục Đang nấu.'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    setState(() {
+                      _tab = 2; // Chuyển sang Tab Đơn hàng
+                    });
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Lỗi nhận đơn: $e'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            child: const Text('NHẬN ĐƠN NGAY'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _message(String text) {
@@ -323,6 +445,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
     child: Scaffold(
       backgroundColor: const Color(0xFFF8F7F4),
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text('SOOPI • Chủ quán'),
         actions: [
           if (_data.remote) ...[
@@ -357,7 +480,11 @@ class _MerchantScreenState extends State<MerchantScreen> {
                       }
                       setState(() => _dirty = false);
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) Navigator.pop(context);
+                        if (!mounted) return;
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          '/login',
+                          (route) => false,
+                        );
                       });
                     }
                   },

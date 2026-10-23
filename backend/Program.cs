@@ -58,6 +58,12 @@ builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 
+// Driver Location, Matching Engine & Dispatch Background Worker
+builder.Services.AddSingleton<IDriverLocationService, InMemoryDriverLocationService>();
+builder.Services.AddSingleton<IDriverOfferManager, DriverOfferManager>();
+builder.Services.AddSingleton<IOrderDispatchQueue, OrderDispatchQueue>();
+builder.Services.AddHostedService<OrderDispatchWorker>();
+
 // Firebase Authentication (JWT Bearer)
 var firebaseProjectId = builder.Configuration["Firebase:ProjectId"] ?? "soopi-food";
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -79,7 +85,8 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.SetIsOriginAllowed(origin => true)
+              .AllowCredentials()
               .AllowAnyMethod()
               .AllowAnyHeader();
     });

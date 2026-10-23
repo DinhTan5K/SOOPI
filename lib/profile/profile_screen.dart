@@ -8,10 +8,12 @@ import 'edit_profile_screen.dart';
 import 'address_list_screen.dart';
 import 'change_password_screen.dart';
 import '../order/order_list_screen.dart';
+import '../shipper/shipper_main_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onBackToHome;
-  const ProfileScreen({super.key, this.onBackToHome});
+  final bool isVisible;
+  const ProfileScreen({super.key, this.onBackToHome, this.isVisible = false});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -27,6 +29,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _profile = _apiService.cachedProfile ?? _apiService.getInitialProfile();
     _loadProfile(silent: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isVisible && !oldWidget.isVisible) {
+      _loadProfile(silent: true);
+    }
   }
 
   Future<void> _loadProfile({bool silent = false}) async {
@@ -383,6 +393,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
+                    );
+                  },
+                ),
+              ]),
+
+              const SizedBox(height: 14),
+
+              // CHẾ ĐỘ ĐỐI TÁC TÀI XẾ
+              _buildSectionTitle('Đối tác giao nhận'),
+              _buildMenuCard([
+                _buildMenuItem(
+                  icon: Icons.delivery_dining,
+                  iconColor: Colors.deepOrange,
+                  title: 'Chế độ Tài xế SOOPI',
+                  subtitle: 'Bật nhận đơn, cập nhật GPS ngầm 5s/lần',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ShipperMainScreen()),
                     );
                   },
                 ),

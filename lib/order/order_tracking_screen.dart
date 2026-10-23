@@ -51,22 +51,28 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
     _orderData.syncTrack(widget.orderId);
 
     // Lắng nghe cập nhật đơn hàng thời gian thực qua SignalR
-    OrderSocketService().joinOrder(widget.orderId);
+    final initialOrder = _orderData.findById(widget.orderId);
+    final trackRoomId = initialOrder?.backendId ?? widget.orderId;
+    OrderSocketService().joinOrder(trackRoomId);
+    if (trackRoomId != widget.orderId) {
+      OrderSocketService().joinOrder(widget.orderId);
+    }
     _socketStatusSub = OrderSocketService().onOrderStatus.listen((data) {
       if (!mounted) return;
       final incomingId = (data['orderId'] ?? data['OrderId'])?.toString().toLowerCase();
+      final order = _orderData.findById(widget.orderId);
       final myId = widget.orderId.toLowerCase();
-      if (incomingId == null || incomingId == myId) {
+      final myBackendId = order?.backendId?.toLowerCase();
+      if (incomingId == null || incomingId == myId || (myBackendId != null && incomingId == myBackendId)) {
         final newStatusStr = (data['newStatus'] ?? data['status'] ?? data['Status'])?.toString().toLowerCase();
-        final order = _orderData.findById(widget.orderId);
         if (order != null && newStatusStr != null) {
           if (newStatusStr == 'delivered' || newStatusStr == 'completed') {
             order.status = OrderStatus.completed;
             order.estimatedDeliveryMinutes = 0;
-          } else if (newStatusStr == 'delivering') {
+          } else if (newStatusStr == 'delivering' || newStatusStr == 'pickedup') {
             order.status = OrderStatus.delivering;
             order.estimatedDeliveryMinutes = 15;
-          } else if (newStatusStr == 'preparing') {
+          } else if (newStatusStr == 'preparing' || newStatusStr == 'readyforpickup') {
             order.status = OrderStatus.preparing;
             order.estimatedDeliveryMinutes = 20;
           } else if (newStatusStr == 'cancelled') {

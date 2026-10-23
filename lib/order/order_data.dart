@@ -208,9 +208,15 @@ class OrderData extends ChangeNotifier {
 
   Future<void> syncTrack(String orderId) async {
     try {
-      final updated = await OrderApiService().trackOrder(orderId);
+      final existing = findById(orderId);
+      final lookupId = existing?.backendId ?? orderId;
+      final updated = await OrderApiService().trackOrder(lookupId);
       if (updated != null) {
-        final idx = _orders.indexWhere((o) => o.id.toLowerCase() == orderId.toLowerCase());
+        final idx = _orders.indexWhere(
+          (o) =>
+              o.id.toLowerCase() == orderId.toLowerCase() ||
+              (o.backendId != null && o.backendId!.toLowerCase() == lookupId.toLowerCase()),
+        );
         if (idx != -1) {
           _orders[idx] = updated;
         } else {
@@ -244,7 +250,7 @@ class OrderData extends ChangeNotifier {
     String? restaurantId,
     required String restaurantName,
     required String restaurantAddress,
-    String restaurantEmoji = '🏪',
+    String restaurantEmoji = '',
     required List<OrderItem> items,
     required String deliveryAddress,
     String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
@@ -269,13 +275,6 @@ class OrderData extends ChangeNotifier {
       backendOrder.restaurantLng = restaurantLng;
       backendOrder.userLat = userLat;
       backendOrder.userLng = userLng;
-      backendOrder.shipper ??= ShipperInfo(
-        name: 'Nguyễn Văn Hùng',
-        phone: '0987.654.321',
-        rating: 4.9,
-        bikePlate: '29-B1 888.66',
-        bikeType: 'Honda Wave Alpha',
-      );
       _orders.insert(0, backendOrder);
       isFromBackend = true;
       notifyListeners();
@@ -293,20 +292,14 @@ class OrderData extends ChangeNotifier {
         discount: discount,
         paymentMethod: paymentMethod,
         deliveryAddress: deliveryAddress,
-        status: OrderStatus.preparing,
+        status: OrderStatus.pending,
         createdAt: DateTime.now(),
         estimatedDeliveryMinutes: 25,
         restaurantLat: restaurantLat,
         restaurantLng: restaurantLng,
         userLat: userLat,
         userLng: userLng,
-        shipper: ShipperInfo(
-          name: 'Nguyễn Văn Hùng',
-          phone: '0987.654.321',
-          rating: 4.9,
-          bikePlate: '29-B1 888.66',
-          bikeType: 'Honda Wave Alpha',
-        ),
+        shipper: null,
       );
       _orders.insert(0, newOrder);
       notifyListeners();

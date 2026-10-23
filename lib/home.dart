@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'order/order_list_screen.dart';
+import 'order/order_data.dart';
 
 import 'profile/profile_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -739,11 +740,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           SafeArea(
             child: OrderListScreen(
+              isVisible: _selectedIndex == 1,
               onBackToHome: () => setState(() => _selectedIndex = 0),
             ),
           ),
           _buildSimplePlaceholder('Món ăn yêu thích', Icons.favorite),
           ProfileScreen(
+            isVisible: _selectedIndex == 3,
             onBackToHome: () => setState(() => _selectedIndex = 0),
           ),
         ],
@@ -1673,9 +1676,15 @@ class _HomeScreenState extends State<HomeScreen> {
     bool isSelected = _selectedIndex == index;
     return InkWell(
       onTap: () {
+        final isSame = _selectedIndex == index;
         setState(() {
           _selectedIndex = index;
         });
+        if (index == 0) {
+          if (isSame) _fetchData();
+        } else if (index == 1) {
+          OrderData().refreshFromApi();
+        }
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),

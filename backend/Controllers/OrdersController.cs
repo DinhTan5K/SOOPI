@@ -144,4 +144,17 @@ public sealed class OrdersController(
             return BadRequest(new { error = exception.Message });
         }
     }
+
+    [HttpPatch("/api/orders/{orderId:guid}/delivery")]
+    [HttpPut("/api/orders/{orderId:guid}/delivery")]
+    public async Task<IActionResult> DriverDeliveryUpdate(
+        Guid orderId,
+        [FromBody] DeliveryUpdate input,
+        CancellationToken ct)
+    {
+        var driverIdHeader = Request.Headers["X-User-Id"].FirstOrDefault();
+        Guid.TryParse(driverIdHeader, out var driverId);
+        var ok = await orders.DriverUpdateOrderStatusAsync(orderId, driverId, input.Status, ct);
+        return ok ? Ok(new { success = true, status = input.Status }) : NotFound();
+    }
 }
