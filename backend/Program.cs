@@ -23,6 +23,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<CurrentAccount>();
 builder.Services.AddScoped<RestaurantManagement>();
+builder.Services.AddScoped<VoucherService>();
 builder.Services.AddProblemDetails();
 
 // Controllers & JSON configuration (tránh lỗi circular reference)

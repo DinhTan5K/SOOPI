@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SoopiFoodBE.Contracts;
 using SoopiFoodBE.Services;
 
@@ -76,6 +77,10 @@ public sealed class OrdersController(
         catch (ArgumentException exception)
         {
             return BadRequest(new { error = exception.Message });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { error = "Voucher hoặc dữ liệu đơn hàng vừa thay đổi. Vui lòng tải lại và thử lại." });
         }
         catch (Exception exception)
         {

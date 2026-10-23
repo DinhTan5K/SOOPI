@@ -159,6 +159,10 @@ public sealed class SoopiDbContext(
             .IsUnique();
 
         modelBuilder.Entity<Coupon>().HasIndex(coupon => coupon.Code).IsUnique();
+        modelBuilder.Entity<Coupon>().HasIndex(c => c.RestaurantId);
+        modelBuilder.Entity<Coupon>().Property<uint>("xmin").IsRowVersion();
+        modelBuilder.Entity<Coupon>().HasOne<Restaurant>().WithMany().HasForeignKey(c => c.RestaurantId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Coupon>().HasOne<MenuItem>().WithMany().HasForeignKey(c => c.MenuItemId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<Coupon>().Property(coupon => coupon.DiscountValue)
             .HasPrecision(12, 2);
         modelBuilder.Entity<Coupon>().Property(coupon => coupon.MinOrderAmount)
