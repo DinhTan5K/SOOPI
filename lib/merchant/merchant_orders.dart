@@ -32,7 +32,7 @@ class _MerchantOrdersState extends State<MerchantOrders>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _initSocketAndFetch();
   }
 
@@ -106,64 +106,10 @@ class _MerchantOrdersState extends State<MerchantOrders>
   }
 
   void _onNewOrderReceived(Map<String, dynamic> order) {
-    // Tải lại danh sách đơn
     _fetchOrders(silent: true);
-
-    // Chuyển sang tab "Đơn mới"
     if (_tabController.index != 0) {
       _tabController.animateTo(0);
     }
-
-    // Hiển thị Popup Modal thông báo đơn mới tức thì
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: const [
-            Icon(Icons.notifications_active, color: Colors.orange, size: 28),
-            SizedBox(width: 8),
-            Text('🔔 Có đơn hàng mới!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Khách hàng: ${order['customerName'] ?? 'Khách'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            if (order['customerPhone'] != null && order['customerPhone'].toString().isNotEmpty)
-              Text('SĐT: ${order['customerPhone']}'),
-            const SizedBox(height: 4),
-            Text('Địa chỉ: ${order['deliveryAddress'] ?? 'Địa chỉ mặc định'}', style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-            const Divider(height: 16),
-            Text('Tổng tiền: ${_formatMoney((order['totalAmount'] as num?)?.toInt() ?? 0)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 16)),
-            if (order['note'] != null && order['note'].toString().isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text('Ghi chú: "${order['note']}"', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.black87)),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Để sau'),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              final orderId = order['orderId']?.toString();
-              if (orderId != null) {
-                _updateStatus(orderId, 'Preparing');
-              }
-            },
-            icon: const Icon(Icons.check),
-            label: const Text('Nhận đơn ngay'),
-            style: FilledButton.styleFrom(backgroundColor: Colors.green),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _updateStatus(String orderId, String newStatus, {String? note}) async {
@@ -203,11 +149,16 @@ class _MerchantOrdersState extends State<MerchantOrders>
     switch (status.toLowerCase()) {
       case 'pending':
         return 'Chờ xác nhận';
+      case 'accepted':
       case 'preparing':
         return 'Đang làm món';
+      case 'readyforpickup':
+        return 'Chờ tài xế lấy món';
+      case 'pickedup':
       case 'delivering':
-        return 'Đang giao hàng';
+        return 'Tài xế đang giao';
       case 'delivered':
+      case 'completed':
         return 'Đã hoàn thành';
       case 'cancelled':
         return 'Đã hủy';
@@ -220,11 +171,16 @@ class _MerchantOrdersState extends State<MerchantOrders>
     switch (status.toLowerCase()) {
       case 'pending':
         return Colors.orange;
+      case 'accepted':
       case 'preparing':
         return Colors.blue;
+      case 'readyforpickup':
+        return Colors.deepOrange;
+      case 'pickedup':
       case 'delivering':
         return Colors.purple;
       case 'delivered':
+      case 'completed':
         return Colors.green;
       case 'cancelled':
         return Colors.red;
@@ -235,16 +191,20 @@ class _MerchantOrdersState extends State<MerchantOrders>
 
   List<Map<String, dynamic>> _filterOrders(int tabIndex) {
     switch (tabIndex) {
-      case 0: // Đơn mới
-        return _orders.where((o) => (o['status']?.toString().toLowerCase() == 'pending')).toList();
-      case 1: // Đang làm
-        return _orders.where((o) => (o['status']?.toString().toLowerCase() == 'preparing')).toList();
-      case 2: // Đang giao
-        return _orders.where((o) => (o['status']?.toString().toLowerCase() == 'delivering')).toList();
-      case 3: // Lịch sử (Completed / Cancelled)
+      case 0: // Đang nấu (Gồm đơn chờ xác nhận và đang nấu)
         return _orders.where((o) {
           final s = o['status']?.toString().toLowerCase();
-          return s == 'delivered' || s == 'cancelled';
+          return s == 'pending' || s == 'accepted' || s == 'preparing';
+        }).toList();
+      case 1: // Đang giao (Gồm đơn chờ shipper lấy và shipper đang đi giao)
+        return _orders.where((o) {
+          final s = o['status']?.toString().toLowerCase();
+          return s == 'readyforpickup' || s == 'pickedup' || s == 'delivering';
+        }).toList();
+      case 2: // Lịch sử (Đã hoàn thành / Đã hủy)
+        return _orders.where((o) {
+          final s = o['status']?.toString().toLowerCase();
+          return s == 'delivered' || s == 'completed' || s == 'cancelled';
         }).toList();
       default:
         return _orders;
@@ -253,7 +213,8 @@ class _MerchantOrdersState extends State<MerchantOrders>
 
   @override
   Widget build(BuildContext context) {
-    final pendingCount = _orders.where((o) => (o['status']?.toString().toLowerCase() == 'pending')).length;
+    final cookingCount = _filterOrders(0).length;
+    final deliveringCount = _filterOrders(1).length;
 
     return Column(
       children: [
@@ -267,14 +228,9 @@ class _MerchantOrdersState extends State<MerchantOrders>
                 'Quản lý Đơn hàng',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
               ),
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.orange),
-                    tooltip: 'Làm mới',
-                    onPressed: () => _fetchOrders(),
-                  ),
-                ],
+              TextButton(
+                onPressed: () => _fetchOrders(),
+                child: const Text('Làm mới'),
               ),
             ],
           ),
@@ -290,15 +246,9 @@ class _MerchantOrdersState extends State<MerchantOrders>
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: Colors.amber.shade300),
             ),
-            child: Row(
-              children: const [
-                Icon(Icons.pause_circle_outline, color: Colors.amber, size: 20),
-                SizedBox(width: 8),
-                Text(
-                  'Quán đang tạm ngưng nhận đơn.',
-                  style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w500),
-                ),
-              ],
+            child: const Text(
+              'Quán đang tạm ngưng nhận đơn.',
+              style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
 
@@ -314,17 +264,17 @@ class _MerchantOrdersState extends State<MerchantOrders>
             Tab(
               child: Row(
                 children: [
-                  const Text('Đơn mới'),
-                  if (pendingCount > 0) ...[
+                  const Text('Đang nấu'),
+                  if (cookingCount > 0) ...[
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.red,
+                        color: Colors.orange,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        '$pendingCount',
+                        '$cookingCount',
                         style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -332,9 +282,28 @@ class _MerchantOrdersState extends State<MerchantOrders>
                 ],
               ),
             ),
-            const Tab(text: 'Đang nấu 🍳'),
-            const Tab(text: 'Đang giao 🛵'),
-            const Tab(text: 'Lịch sử 📋'),
+            Tab(
+              child: Row(
+                children: [
+                  const Text('Đang giao'),
+                  if (deliveringCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$deliveringCount',
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Tab(text: 'Lịch sử'),
           ],
         ),
 
@@ -347,8 +316,6 @@ class _MerchantOrdersState extends State<MerchantOrders>
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.error_outline, color: Colors.red, size: 40),
-                          const SizedBox(height: 8),
                           Text(_error!, style: const TextStyle(color: Colors.red)),
                           const SizedBox(height: 12),
                           ElevatedButton(
@@ -364,7 +331,6 @@ class _MerchantOrdersState extends State<MerchantOrders>
                         _buildOrderList(0),
                         _buildOrderList(1),
                         _buildOrderList(2),
-                        _buildOrderList(3),
                       ],
                     ),
         ),
@@ -377,18 +343,11 @@ class _MerchantOrdersState extends State<MerchantOrders>
 
     if (list.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.receipt_long_outlined, size: 56, color: Colors.grey.shade400),
-            const SizedBox(height: 12),
-            Text(
-              tabIndex == 0
-                  ? 'Hiện chưa có đơn hàng mới nào.'
-                  : 'Không có đơn hàng trong mục này.',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-            ),
-          ],
+        child: Text(
+          tabIndex == 0
+              ? 'Hiện chưa có đơn hàng mới nào.'
+              : 'Không có đơn hàng trong mục này.',
+          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
         ),
       );
     }
@@ -411,6 +370,9 @@ class _MerchantOrdersState extends State<MerchantOrders>
     final status = order['status']?.toString() ?? 'Pending';
     final customerName = order['customerName']?.toString() ?? 'Khách hàng';
     final customerPhone = order['customerPhone']?.toString() ?? '';
+    final shipperId = order['shipperId']?.toString();
+    final shipperName = order['shipperName']?.toString();
+    final shipperPhone = order['shipperPhone']?.toString();
     final address = order['deliveryAddress']?.toString() ?? '';
     final total = (order['totalAmount'] as num?)?.toInt() ?? 0;
     final note = order['note']?.toString() ?? '';
@@ -419,6 +381,7 @@ class _MerchantOrdersState extends State<MerchantOrders>
         .toList();
 
     final statusLow = status.toLowerCase();
+    final hasShipper = shipperId != null && shipperId.isNotEmpty;
 
     return Card(
       elevation: 2,
@@ -459,8 +422,6 @@ class _MerchantOrdersState extends State<MerchantOrders>
             // Customer info
             Row(
               children: [
-                const Icon(Icons.person_outline, size: 16, color: Colors.grey),
-                const SizedBox(width: 4),
                 Text(customerName, style: const TextStyle(fontWeight: FontWeight.w600)),
                 if (customerPhone.isNotEmpty) ...[
                   const SizedBox(width: 8),
@@ -471,20 +432,35 @@ class _MerchantOrdersState extends State<MerchantOrders>
 
             if (address.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.location_on_outlined, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      address,
-                      style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+              Text(
+                'Địa chỉ: $address',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+
+            if (statusLow == 'readyforpickup' || statusLow == 'delivering' || statusLow == 'pickedup') ...[
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: hasShipper ? Colors.green.shade50 : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  hasShipper
+                      ? (statusLow == 'readyforpickup'
+                          ? 'Tài xế ${shipperName ?? 'SOOPI'} (${shipperPhone ?? ''}) đang đến quán lấy món'
+                          : 'Tài xế ${shipperName ?? 'SOOPI'} (${shipperPhone ?? ''}) đang giao đến khách hàng')
+                      : 'Đang tìm tài xế gần quán...',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: hasShipper ? Colors.green.shade800 : Colors.deepOrange.shade800,
                   ),
-                ],
+                ),
               ),
             ],
 
@@ -503,20 +479,20 @@ class _MerchantOrdersState extends State<MerchantOrders>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        item['itemName']?.toString() ?? '',
+                        item['itemName']?.toString() ?? 'Món ăn',
                         style: const TextStyle(fontSize: 13),
                       ),
                     ),
                     Text(
                       _formatMoney(((item['unitPrice'] as num?)?.toInt() ?? 0) * ((item['quantity'] as num?)?.toInt() ?? 1)),
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),
               ),
 
             if (note.isNotEmpty) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(8),
@@ -561,25 +537,25 @@ class _MerchantOrdersState extends State<MerchantOrders>
                         child: const Text('Từ chối'),
                       ),
                       const SizedBox(width: 8),
-                      FilledButton.icon(
+                      FilledButton(
                         onPressed: () => _updateStatus(orderId, 'Preparing'),
-                        icon: const Icon(Icons.check, size: 16),
-                        label: const Text('Nhận đơn'),
                         style: FilledButton.styleFrom(backgroundColor: Colors.green),
+                        child: const Text('Nhận đơn'),
                       ),
-                    ] else if (statusLow == 'preparing') ...[
-                      FilledButton.icon(
-                        onPressed: () => _updateStatus(orderId, 'Delivering'),
-                        icon: const Icon(Icons.delivery_dining, size: 18),
-                        label: const Text('Xong - Giao shipper'),
+                    ] else if (statusLow == 'accepted' || statusLow == 'preparing') ...[
+                      FilledButton(
+                        onPressed: () => _updateStatus(orderId, 'ReadyForPickup'),
                         style: FilledButton.styleFrom(backgroundColor: Colors.blue),
+                        child: const Text('Xong - Giao shipper'),
                       ),
-                    ] else if (statusLow == 'delivering') ...[
-                      FilledButton.icon(
-                        onPressed: () => _updateStatus(orderId, 'Delivered'),
-                        icon: const Icon(Icons.done_all, size: 18),
-                        label: const Text('Đã hoàn thành'),
-                        style: FilledButton.styleFrom(backgroundColor: Colors.green),
+                    ] else if (statusLow == 'readyforpickup' && !hasShipper) ...[
+                      OutlinedButton(
+                        onPressed: () => _updateStatus(orderId, 'ReadyForPickup', note: 'Phát lại tín hiệu gọi Shipper'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blue,
+                          side: const BorderSide(color: Colors.blue),
+                        ),
+                        child: const Text('Gọi lại Shipper'),
                       ),
                     ],
                   ],

@@ -59,6 +59,12 @@ builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 
+// Driver Location, Matching Engine & Dispatch Background Worker
+builder.Services.AddSingleton<IDriverLocationService, InMemoryDriverLocationService>();
+builder.Services.AddSingleton<IDriverOfferManager, DriverOfferManager>();
+builder.Services.AddSingleton<IOrderDispatchQueue, OrderDispatchQueue>();
+builder.Services.AddHostedService<OrderDispatchWorker>();
+
 // Firebase Authentication (JWT Bearer)
 var firebaseProjectId = builder.Configuration["Firebase:ProjectId"] ?? "soopi-food";
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -80,7 +86,8 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.SetIsOriginAllowed(origin => true)
+              .AllowCredentials()
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
@@ -151,6 +158,27 @@ using (var scope = app.Services.CreateScope())
         dbContext.Database.EnsureCreated();
         app.Logger.LogInformation("Database PostgreSQL đã sẵn sàng.");
 
+        // Migration: Đảm bảo bảng Coupons có đầy đủ cột RestaurantId và MenuItemId
+        try
+        {
+            var voucherSql = """
+                ALTER TABLE "Coupons" ADD COLUMN IF NOT EXISTS "RestaurantId" uuid REFERENCES "Restaurants"("Id") ON DELETE RESTRICT;
+                ALTER TABLE "Coupons" ADD COLUMN IF NOT EXISTS "MenuItemId" uuid REFERENCES "MenuItems"("Id") ON DELETE RESTRICT;
+                CREATE INDEX IF NOT EXISTS "IX_Coupons_RestaurantId" ON "Coupons"("RestaurantId");
+                CREATE INDEX IF NOT EXISTS "IX_Coupons_MenuItemId" ON "Coupons"("MenuItemId");
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CK_Coupons_Scope' AND conrelid = '"Coupons"'::regclass) THEN
+                        ALTER TABLE "Coupons" ADD CONSTRAINT "CK_Coupons_Scope" CHECK ("MenuItemId" IS NULL OR "RestaurantId" IS NOT NULL);
+                    END IF;
+                END $$;
+            """;
+            dbContext.Database.ExecuteSqlRaw(voucherSql);
+            app.Logger.LogInformation("Đã nâng cấp cấu trúc bảng Coupons.");
+        }
+        catch (Exception exMigration)
+        {
+            app.Logger.LogWarning("Lỗi chạy migration Coupons: {Message}", exMigration.Message);
+        }
     }
     catch (Exception ex)
     {

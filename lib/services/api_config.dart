@@ -13,14 +13,16 @@ class ApiConfig extends ChangeNotifier {
   static const String _prefKey = 'custom_server_base_url';
 
   // IP máy tính hiện tại và các candidate phổ biến
-  static const String currentPcWifiIp = '192.168.1.190';
+  static const String currentPcWifiIp = '192.168.1.69';
 
   static const List<String> defaultCandidates = [
     'http://127.0.0.1:5000/api',          // USB cắm cáp (adb reverse) & Windows Desktop
-    'https://soopifood-dev.loca.lt/api',  // Cloud Tunnel (Hoạt động trên 4G & mọi Wi-Fi)
-    'http://192.168.1.190:5000/api',      // Wi-Fi máy tính hiện tại
-    'http://10.0.2.2:5000/api',            // Android Emulator
     'http://localhost:5000/api',           // Localhost
+    'http://192.168.1.69:5000/api',       // Wi-Fi máy tính hiện tại (192.168.1.69)
+    'http://10.12.104.120:5000/api',      // Wi-Fi phụ
+    'http://192.168.1.190:5000/api',      // Wi-Fi máy tính phụ
+    'https://soopifood-dev.loca.lt/api',  // Cloud Tunnel (Hoạt động trên 4G & mọi Wi-Fi)
+    'http://10.0.2.2:5000/api',            // Android Emulator
     'http://192.168.43.1:5000/api',        // Khi điện thoại phát Wi-Fi Hotspot cho máy tính
     'http://172.20.10.1:5000/api',         // iPhone Hotspot
   ];
@@ -96,7 +98,13 @@ class ApiConfig extends ChangeNotifier {
       final res = await http.get(uri, headers: const {'bypass-tunnel-reminder': 'true'}).timeout(timeout);
       return res.statusCode == 200 || res.statusCode == 404;
     } catch (_) {
-      return false;
+      try {
+        final root = clean.endsWith('/api') ? clean.substring(0, clean.length - 4) : clean;
+        final res = await http.get(Uri.parse(root)).timeout(const Duration(milliseconds: 1500));
+        return res.statusCode >= 200 && res.statusCode < 500;
+      } catch (_) {
+        return false;
+      }
     }
   }
 
@@ -167,12 +175,12 @@ class ApiConfig extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Kiểm tra nhanh URL hiện tại hoặc USB adb reverse (chỉ mất ~300ms)
-      if (await testConnection(_baseUrl, timeout: const Duration(milliseconds: 400))) {
+      // 1. Kiểm tra nhanh URL hiện tại hoặc USB adb reverse (timeout 2s)
+      if (await testConnection(_baseUrl, timeout: const Duration(seconds: 2))) {
         debugPrint('[ApiConfig] URL hiện tại vẫn hoạt động tốt: $_baseUrl');
         return true;
       }
-      if (await testConnection('http://127.0.0.1:5000/api', timeout: const Duration(milliseconds: 400))) {
+      if (await testConnection('http://127.0.0.1:5000/api', timeout: const Duration(seconds: 2))) {
         _baseUrl = 'http://127.0.0.1:5000/api';
         await _saveBaseUrl(_baseUrl);
         debugPrint('[ApiConfig] Đã kết nối qua cáp USB (adb reverse): $_baseUrl');

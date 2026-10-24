@@ -12,7 +12,20 @@
           "package_name": "com.example.soopi"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "100961861308-v2uv6p4fv0tpqtgtrb5vitbinuspqubm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.soopi",
+            "certificate_hash": "9119f8758cc45a9ed5812ad43a9ccb2c190da718"
+          }
+        },
+        {
+          "client_id": "100961861308-9rkfunlqflen9jnuaatthb437fcl6o39.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDofABLUk46uMOawNp14sDT0zC5qOUlqK0"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "100961861308-9rkfunlqflen9jnuaatthb437fcl6o39.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

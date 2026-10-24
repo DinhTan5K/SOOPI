@@ -17,9 +17,19 @@ public interface IOrderService
     Task<List<FoodOrder>> History(Guid userId, CancellationToken ct);
     Task<FoodOrder?> Track(Guid userId, Guid orderId, CancellationToken ct);
     Task<bool> UpdateDelivery(Guid actorId, Guid orderId, DeliveryUpdate input, CancellationToken ct);
+    Task<bool> DriverUpdateOrderStatusAsync(Guid orderId, Guid driverId, string status, CancellationToken ct);
+    Task<bool> AssignShipperAsync(Guid orderId, Guid shipperId, CancellationToken ct);
+    Task TriggerOrderDispatchAsync(Guid orderId, CancellationToken ct);
+    Task<List<DriverOfferPayload>> GetAvailableOrdersForShipperAsync(double driverLat, double driverLng, CancellationToken ct);
 }
 
-public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHubContext<OrderHub> hubContext, VoucherService vouchers) : IOrderService
+public sealed class OrderService(
+    SoopiDbContext db,
+    IOrderRepository orders,
+    VoucherService vouchers,
+    IHubContext<OrderHub> hubContext,
+    IOrderDispatchQueue dispatchQueue,
+    IDriverLocationService driverLocationService) : IOrderService
 {
     public async Task<ShoppingCart> Cart(Guid userId, CancellationToken ct)
     {
@@ -121,11 +131,16 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
 
         if (!string.IsNullOrWhiteSpace(input.CouponCode))
         {
-            var result = await vouchers.Evaluate(input.CouponCode, cart.RestaurantId!.Value,
-                cart.Items.Select(i => new VoucherLine(i.MenuItemId, i.MenuItem!.Price, i.Quantity)).ToList(), ct);
+            var lines = cart.Items
+                .Where(i => i.MenuItem != null)
+                .Select(i => new VoucherLine(i.MenuItemId, i.MenuItem!.Price, i.Quantity))
+                .ToList();
+            var result = await vouchers.Evaluate(input.CouponCode, cart.RestaurantId!.Value, lines, ct);
             coupon = result.Coupon;
             discount = result.Discount;
             coupon.UsedCount++;
+            db.Coupons.Update(coupon);
+            db.Entry(coupon).Property(c => c.UsedCount).IsModified = true;
         }
 
         var restaurant = await db.Restaurants.FindAsync([cart.RestaurantId], ct)
@@ -152,6 +167,7 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
             PaymentMethod = paymentMethod,
             PaymentStatus = paymentMethod == "Cash" ? "Unpaid" : "Paid",
             Note = input.Note,
+            ShipperId = null,
             Items = cart.Items.Select(item => new OrderItem
             {
                 MenuItemId = item.MenuItemId,
@@ -174,6 +190,7 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
 
         db.CartItems.RemoveRange(cart.Items);
         cart.RestaurantId = null;
+
         await db.SaveChangesAsync(ct);
         await BroadcastNewOrderAsync(order, restaurant, ct);
         return order;
@@ -190,10 +207,11 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
             user = new AppUser
             {
                 Id = userId,
+                FirebaseUid = $"guest_{userId:N}",
                 Role = "Customer",
                 FullName = "Khách hàng SOOPI",
                 Email = $"{userId}@soopi.vn",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTimeOffset.UtcNow
             };
             db.Users.Add(user);
         }
@@ -270,15 +288,17 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
         Coupon? coupon = null;
         if (!string.IsNullOrWhiteSpace(input.CouponCode))
         {
-            var result = await vouchers.Evaluate(input.CouponCode, restaurant.Id,
-                orderItems.Select(i => new VoucherLine(i.MenuItemId!.Value, i.UnitPrice, i.Quantity)).ToList(), ct);
+            var lines = orderItems
+                .Where(i => i.MenuItemId.HasValue && i.MenuItemId.Value != Guid.Empty)
+                .Select(i => new VoucherLine(i.MenuItemId!.Value, i.UnitPrice, i.Quantity))
+                .ToList();
+            var result = await vouchers.Evaluate(input.CouponCode, restaurant.Id, lines, ct);
             coupon = result.Coupon;
             discount = result.Discount;
             coupon.UsedCount++;
+            db.Coupons.Update(coupon);
+            db.Entry(coupon).Property(c => c.UsedCount).IsModified = true;
         }
-
-        // Assign a shipper if available
-        var shipper = await db.Users.FirstOrDefaultAsync(u => u.Role == "Shipper", ct);
 
         var paymentMethod = (input.PaymentMethod ?? "").ToLower() switch
         {
@@ -304,15 +324,14 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
             PaymentMethod = paymentMethod,
             PaymentStatus = paymentMethod == "Cash" ? "Unpaid" : "Paid",
             Note = input.Note ?? "",
-            Status = "Preparing",
-            ShipperId = shipper?.Id,
+            Status = "Pending",
+            ShipperId = null, // Không gán cứng shipper lúc tạo đơn để Dispatch Engine bắn popup!
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Items = orderItems
         };
 
-        order.StatusHistory.Add(new OrderStatusHistory { Id = Guid.NewGuid(), Status = "Pending", Note = "Đã tiếp nhận đơn" });
-        order.StatusHistory.Add(new OrderStatusHistory { Id = Guid.NewGuid(), Status = "Preparing", Note = "Quán đang chuẩn bị món" });
+        order.StatusHistory.Add(new OrderStatusHistory { Id = Guid.NewGuid(), Status = "Pending", Note = "Đã tiếp nhận đơn, chờ quán xác nhận" });
 
         db.Orders.Add(order);
         db.Payments.Add(new Payment
@@ -330,10 +349,6 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
 
         // Load navigations for caller
         await db.Entry(order).Reference(o => o.Restaurant).LoadAsync(ct);
-        if (order.ShipperId.HasValue)
-        {
-            await db.Entry(order).Reference(o => o.Shipper).LoadAsync(ct);
-        }
         await db.Entry(order).Collection(o => o.Items).LoadAsync(ct);
 
         return order;
@@ -426,10 +441,120 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
         }
 
         await db.SaveChangesAsync(ct);
+
+        var statusPayload = new
+        {
+            orderId = order.Id,
+            restaurantId = order.RestaurantId,
+            newStatus = order.Status,
+            status = order.Status,
+            updatedAt = order.UpdatedAt,
+            note = input.Note
+        };
+
+        try
+        {
+            await hubContext.Clients.Group($"order_{order.Id}")
+                .SendAsync("OrderStatusUpdated", statusPayload, cancellationToken: ct);
+            await hubContext.Clients.Group($"user_{order.CustomerId}")
+                .SendAsync("OrderStatusUpdated", statusPayload, cancellationToken: ct);
+            await hubContext.Clients.Group($"restaurant_{order.RestaurantId}")
+                .SendAsync("OrderStatusUpdated", statusPayload, cancellationToken: ct);
+        }
+        catch { }
+
+        if (input.Status == "ReadyForPickup")
+        {
+            await TriggerOrderDispatchAsync(order.Id, ct);
+        }
+
         return true;
     }
 
+    public async Task<bool> DriverUpdateOrderStatusAsync(
+        Guid orderId,
+        Guid driverId,
+        string status,
+        CancellationToken ct)
+    {
+        var order = await db.Orders
+            .Include(o => o.Restaurant)
+            .FirstOrDefaultAsync(o => o.Id == orderId, ct);
 
+        if (order is null)
+            return false;
+
+        var oldStatus = order.Status;
+        var newStatus = (status ?? "").Trim().ToLowerInvariant() switch
+        {
+            "pickedup" or "delivering" => "Delivering",
+            "delivered" or "completed" => "Delivered",
+            "readyforpickup" => "ReadyForPickup",
+            _ => (status ?? "Delivering").Trim()
+        };
+
+        if (order.ShipperId == null && driverId != Guid.Empty)
+        {
+            order.ShipperId = driverId;
+        }
+
+        order.Status = newStatus;
+        order.UpdatedAt = DateTime.UtcNow;
+
+        if (newStatus == "Delivered")
+        {
+            order.PaymentStatus = "Paid";
+            if (driverId != Guid.Empty)
+            {
+                driverLocationService.SetAvailability(driverId, true);
+            }
+            else if (order.ShipperId.HasValue)
+            {
+                driverLocationService.SetAvailability(order.ShipperId.Value, true);
+            }
+        }
+
+        order.StatusHistory.Add(new OrderStatusHistory
+        {
+            Status = newStatus,
+            Note = newStatus == "Delivering"
+                ? "Tài xế đã lấy món và đang giao đến khách hàng"
+                : newStatus == "Delivered"
+                    ? "Tài xế đã giao hàng thành công"
+                    : $"Tài xế cập nhật trạng thái: {newStatus}",
+            ChangedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        var payload = new
+        {
+            orderId = order.Id,
+            orderCode = order.OrderCode,
+            restaurantId = order.RestaurantId,
+            oldStatus,
+            newStatus,
+            status = newStatus,
+            shipperId = order.ShipperId,
+            updatedAt = order.UpdatedAt
+        };
+
+        try
+        {
+            await hubContext.Clients.Group($"order_{order.Id}")
+                .SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+            await hubContext.Clients.Group($"user_{order.CustomerId}")
+                .SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+            await hubContext.Clients.Group($"restaurant_{order.RestaurantId}")
+                .SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SignalR broadcast error on DriverUpdateOrderStatus: {ex.Message}");
+        }
+
+        return true;
+    }
 
     private async Task BroadcastNewOrderAsync(FoodOrder order, Restaurant restaurant, CancellationToken ct)
     {
@@ -473,5 +598,155 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
         {
             System.Diagnostics.Debug.WriteLine($"SignalR broadcast error: {ex.Message}");
         }
+    }
+
+    public async Task TriggerOrderDispatchAsync(Guid orderId, CancellationToken ct)
+    {
+        var order = await db.Orders
+            .Include(o => o.Restaurant)
+            .FirstOrDefaultAsync(o => o.Id == orderId, ct);
+
+        if (order is null || order.Restaurant is null)
+            return;
+
+        if (order.Status is not ("ReadyForPickup" or "Delivering"))
+            return;
+
+        // Nếu đơn trước đó bị gán ShipperId ảo hoặc chủ quán bấm phát lại đơn cho shipper
+        if (order.ShipperId.HasValue)
+        {
+            order.ShipperId = null;
+            await db.SaveChangesAsync(ct);
+        }
+
+        // Tọa độ quán (nếu chưa có thì dùng mặc định FPT Complex Đà Nẵng)
+        var shopLat = (double)(order.Restaurant.Latitude ?? 16.0442m);
+        var shopLng = (double)(order.Restaurant.Longitude ?? 108.2213m);
+
+        var task = new OrderDispatchTask
+        {
+            OrderId = order.Id,
+            OrderCode = order.OrderCode,
+            RestaurantId = order.RestaurantId,
+            RestaurantName = order.Restaurant.Name,
+            RestaurantLatitude = shopLat,
+            RestaurantLongitude = shopLng,
+            DeliveryAddress = order.DeliveryAddress,
+            DeliveryFee = order.DeliveryFee,
+            TotalAmount = order.TotalAmount
+        };
+
+        await dispatchQueue.EnqueueAsync(task, ct);
+    }
+
+    public async Task<List<DriverOfferPayload>> GetAvailableOrdersForShipperAsync(
+        double driverLat,
+        double driverLng,
+        CancellationToken ct)
+    {
+        var waitingOrders = await db.Orders
+            .AsNoTracking()
+            .Include(o => o.Restaurant)
+            .Where(o => (o.Status == "ReadyForPickup" || o.Status == "Delivering") && o.ShipperId == null)
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(20)
+            .ToListAsync(ct);
+
+        var result = new List<DriverOfferPayload>();
+        foreach (var o in waitingOrders)
+        {
+            var shopLat = (double)(o.Restaurant?.Latitude ?? 16.0442m);
+            var shopLng = (double)(o.Restaurant?.Longitude ?? 108.2213m);
+            var dist = InMemoryDriverLocationService.CalculateDistanceKm(driverLat, driverLng, shopLat, shopLng);
+
+            // Chỉ hiện các đơn loanh quanh tài xế (trong bán kính <= 5km), loại bỏ đơn cách xa 600km
+            if (dist <= 5.0)
+            {
+                result.Add(new DriverOfferPayload(
+                    o.Id,
+                    o.OrderCode,
+                    o.Restaurant?.Name ?? "Quán SOOPI",
+                    o.DeliveryAddress,
+                    o.DeliveryFee,
+                    o.TotalAmount,
+                    Math.Round(dist, 2),
+                    15
+                ));
+            }
+        }
+
+        return result.OrderBy(r => r.DistanceToRestaurantKm).ToList();
+    }
+
+    public async Task<bool> AssignShipperAsync(Guid orderId, Guid shipperId, CancellationToken ct)
+    {
+        var order = await db.Orders
+            .Include(o => o.Restaurant)
+            .Include(o => o.Address)
+            .FirstOrDefaultAsync(o => o.Id == orderId, ct);
+
+        if (order is null || order.Status is "Cancelled" or "Delivered")
+        {
+            return false;
+        }
+
+        var shipper = await db.Users.FirstOrDefaultAsync(u => u.Id == shipperId, ct);
+        shipper ??= new AppUser
+        {
+            Id = shipperId,
+            FullName = "Tài xế SOOPI",
+            Phone = "0901234567",
+            Role = "Shipper"
+        };
+        if (!db.Users.Local.Contains(shipper) && await db.Users.FindAsync([shipperId], ct) == null)
+        {
+            db.Users.Add(shipper);
+        }
+
+        order.ShipperId = shipperId;
+        order.UpdatedAt = DateTime.UtcNow;
+        order.StatusHistory.Add(new OrderStatusHistory
+        {
+            Status = "ShipperAssigned",
+            Note = $"Tài xế {shipper.FullName} ({shipper.Phone}) đã nhận đơn",
+            ChangedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        var payload = new
+        {
+            orderId = order.Id,
+            orderCode = order.OrderCode,
+            restaurantId = order.RestaurantId,
+            shipperId = shipper.Id,
+            shipperName = shipper.FullName,
+            shipperPhone = shipper.Phone,
+            newStatus = order.Status,
+            status = order.Status
+        };
+
+        try
+        {
+            await hubContext.Clients.Group($"restaurant_{order.RestaurantId}")
+                .SendAsync("ShipperAssigned", payload, cancellationToken: ct);
+            await hubContext.Clients.Group($"user_{order.CustomerId}")
+                .SendAsync("ShipperAssigned", payload, cancellationToken: ct);
+            await hubContext.Clients.Group($"order_{order.Id}")
+                .SendAsync("ShipperAssigned", payload, cancellationToken: ct);
+
+            await hubContext.Clients.Group($"restaurant_{order.RestaurantId}")
+                .SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+            await hubContext.Clients.Group($"user_{order.CustomerId}")
+                .SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+            await hubContext.Clients.Group($"order_{order.Id}")
+                .SendAsync("OrderStatusUpdated", payload, cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SignalR broadcast error on AssignShipper: {ex.Message}");
+        }
+
+        return true;
     }
 }

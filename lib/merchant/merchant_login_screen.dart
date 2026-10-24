@@ -75,6 +75,7 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
         // Đăng ký quyền Chủ quán (Role = Owner) lên Backend
         try {
           await MerchantApiService().request('POST', 'register');
+          await ProfileApiService().cacheUserRole('Owner');
         } catch (e) {
           debugPrint('Lỗi kích hoạt quyền Chủ quán: $e');
         }
@@ -100,6 +101,7 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
             });
             return;
           }
+          await ProfileApiService().cacheUserRole(profile.role);
         } catch (e) {
           await FirebaseAuth.instance.signOut();
           ProfileApiService().clearCache();
@@ -111,9 +113,11 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
         }
       }
       ProfileApiService().clearCache();
+      await ProfileApiService().cacheUserRole('Owner');
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
+      Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(builder: (_) => const MerchantScreen()),
+        (route) => false,
       );
     } on TimeoutException {
       if (mounted) {

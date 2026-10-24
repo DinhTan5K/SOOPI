@@ -7,7 +7,8 @@ import 'order_review_screen.dart';
 
 class OrderListScreen extends StatefulWidget {
   final VoidCallback? onBackToHome;
-  const OrderListScreen({super.key, this.onBackToHome});
+  final bool isVisible;
+  const OrderListScreen({super.key, this.onBackToHome, this.isVisible = false});
 
   @override
   State<OrderListScreen> createState() => _OrderListScreenState();
@@ -35,6 +36,14 @@ class _OrderListScreenState extends State<OrderListScreen>
         }
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant OrderListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isVisible && !oldWidget.isVisible) {
+      _orderData.refreshFromApi();
+    }
   }
 
   @override
@@ -219,18 +228,37 @@ class _OrderListScreenState extends State<OrderListScreen>
     required IconData emptyIcon,
   }) {
     if (orders.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(emptyIcon, size: 64, color: Colors.orange.shade300),
-              const SizedBox(height: 16),
-              Text(emptyTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              Text(emptySubtitle, style: const TextStyle(color: Colors.grey, fontSize: 13), textAlign: TextAlign.center),
-            ],
+      if (_orderData.isLoading) {
+        return const Center(child: CircularProgressIndicator(color: Colors.orange));
+      }
+      return RefreshIndicator(
+        onRefresh: _orderData.refreshFromApi,
+        color: Colors.orange,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 64),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(emptyIcon, size: 64, color: Colors.orange.shade300),
+                const SizedBox(height: 16),
+                Text(emptyTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                Text(emptySubtitle, style: const TextStyle(color: Colors.grey, fontSize: 13), textAlign: TextAlign.center),
+                const SizedBox(height: 20),
+                OutlinedButton.icon(
+                  onPressed: _orderData.refreshFromApi,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Tải lại đơn hàng'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.orange,
+                    side: const BorderSide(color: Colors.orange),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );

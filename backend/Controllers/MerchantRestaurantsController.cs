@@ -207,6 +207,7 @@ public sealed class MerchantRestaurantsController(
             .AsNoTracking()
             .Include(o => o.Items)
             .Include(o => o.Customer)
+            .Include(o => o.Shipper)
             .Where(o => o.RestaurantId == id);
 
         if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "all", StringComparison.OrdinalIgnoreCase))
@@ -226,6 +227,9 @@ public sealed class MerchantRestaurantsController(
                 o.CustomerId,
                 CustomerName = o.Customer != null ? (o.Customer.FullName ?? o.Customer.Email) : "Khách hàng",
                 CustomerPhone = o.Customer != null ? (o.Customer.Phone ?? "") : "",
+                o.ShipperId,
+                ShipperName = o.Shipper != null ? (o.Shipper.FullName ?? o.Shipper.Email) : null,
+                ShipperPhone = o.Shipper != null ? (o.Shipper.Phone ?? "") : null,
                 o.DeliveryAddress,
                 o.Subtotal,
                 o.DiscountAmount,
@@ -257,6 +261,7 @@ public sealed class MerchantRestaurantsController(
         Guid orderId,
         [FromBody] UpdateOrderStatusInput input,
         [FromServices] IHubContext<OrderHub> hubContext,
+        [FromServices] IOrderService orderService,
         CancellationToken ct = default)
     {
         await management.Owned(id, ct);
@@ -290,6 +295,11 @@ public sealed class MerchantRestaurantsController(
         });
 
         await db.SaveChangesAsync(ct);
+
+        if (newStatus is "ReadyForPickup" or "Delivering")
+        {
+            await orderService.TriggerOrderDispatchAsync(order.Id, ct);
+        }
 
         var payload = new
         {

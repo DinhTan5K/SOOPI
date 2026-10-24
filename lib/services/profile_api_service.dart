@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user_profile.dart';
 import '../models/user_address.dart';
@@ -50,6 +51,41 @@ class ProfileApiService {
     isConnectedToBackend = false;
   }
 
+  Future<void> cacheUserRole(String role) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('soopi.user_role.$uid', role);
+    } catch (_) {}
+  }
+
+  Future<String?> getCachedUserRole() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('soopi.user_role.$uid');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String> resolveUserRole() async {
+    final cachedRole = await getCachedUserRole();
+    try {
+      final profile = await getProfile();
+      if (isConnectedToBackend && profile.role.isNotEmpty) {
+        await cacheUserRole(profile.role);
+        return profile.role;
+      }
+    } catch (_) {}
+    if (cachedRole != null && cachedRole.isNotEmpty) {
+      return cachedRole;
+    }
+    return _localProfileCache?.role ?? 'Customer';
+  }
+
   /// Lấy Firebase ID Token để đính kèm vào Header Authorization
   Future<Map<String, String>> getHeaders() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -79,6 +115,7 @@ class ProfileApiService {
         isConnectedToBackend = true;
         final data = jsonDecode(response.body);
         _localProfileCache = UserProfile.fromJson(data);
+        await cacheUserRole(_localProfileCache!.role);
         return _localProfileCache!;
       }
     } catch (_) {
@@ -95,6 +132,7 @@ class ProfileApiService {
             isConnectedToBackend = true;
             final data = jsonDecode(response.body);
             _localProfileCache = UserProfile.fromJson(data);
+            await cacheUserRole(_localProfileCache!.role);
             return _localProfileCache!;
           }
         } catch (_) {}
@@ -103,7 +141,10 @@ class ProfileApiService {
     }
 
     // Fallback: Sử dụng dữ liệu Firebase hoặc cache hiện tại
-    _localProfileCache ??= getInitialProfile();
+    final savedRole = await getCachedUserRole();
+    _localProfileCache ??= getInitialProfile().copyWith(
+      role: (savedRole != null && savedRole.isNotEmpty) ? savedRole : 'Customer',
+    );
     return _localProfileCache!;
   }
 

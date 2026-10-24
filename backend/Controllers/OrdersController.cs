@@ -29,6 +29,10 @@ public sealed class OrdersController(
         {
             return NotFound();
         }
+        catch (ManagementException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
         catch (InvalidOperationException exception)
         {
             return BadRequest(new { error = exception.Message });
@@ -48,6 +52,10 @@ public sealed class OrdersController(
         catch (KeyNotFoundException exception)
         {
             return NotFound(new { error = exception.Message });
+        }
+        catch (ManagementException exception)
+        {
+            return BadRequest(new { error = exception.Message });
         }
         catch (InvalidOperationException exception)
         {
@@ -69,6 +77,10 @@ public sealed class OrdersController(
         catch (KeyNotFoundException exception)
         {
             return NotFound(new { error = exception.Message });
+        }
+        catch (ManagementException exception)
+        {
+            return BadRequest(new { error = exception.Message });
         }
         catch (InvalidOperationException exception)
         {
@@ -117,6 +129,10 @@ public sealed class OrdersController(
         {
             return NotFound();
         }
+        catch (ManagementException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
         catch (InvalidOperationException exception)
         {
             return BadRequest(new { error = exception.Message });
@@ -148,5 +164,18 @@ public sealed class OrdersController(
         {
             return BadRequest(new { error = exception.Message });
         }
+    }
+
+    [HttpPatch("/api/orders/{orderId:guid}/delivery")]
+    [HttpPut("/api/orders/{orderId:guid}/delivery")]
+    public async Task<IActionResult> DriverDeliveryUpdate(
+        Guid orderId,
+        [FromBody] DeliveryUpdate input,
+        CancellationToken ct)
+    {
+        var driverIdHeader = Request.Headers["X-User-Id"].FirstOrDefault();
+        Guid.TryParse(driverIdHeader, out var driverId);
+        var ok = await orders.DriverUpdateOrderStatusAsync(orderId, driverId, input.Status, ct);
+        return ok ? Ok(new { success = true, status = input.Status }) : NotFound();
     }
 }
