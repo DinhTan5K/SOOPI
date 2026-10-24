@@ -388,7 +388,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
                       shrinkWrap: true,
                       padding: const EdgeInsets.all(12),
                       itemCount: _availableOrders.length,
-                      separatorBuilder: (_, __) => const Divider(height: 14),
+                      separatorBuilder: (_, _) => const Divider(height: 14),
                       itemBuilder: (context, index) {
                         final order = _availableOrders[index];
                         final code = order['orderCode'] ?? 'SP-Order';

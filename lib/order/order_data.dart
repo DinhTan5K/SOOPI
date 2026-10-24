@@ -185,6 +185,7 @@ class OrderData extends ChangeNotifier {
   final List<OrderModel> _orders = [];
   bool isLoading = false;
   bool isFromBackend = false;
+  String? activeCouponCode;
 
   List<OrderModel> get orders => List.unmodifiable(_orders);
   List<OrderModel> get activeOrders => _orders.where((o) => o.isActive).toList();
@@ -256,11 +257,17 @@ class OrderData extends ChangeNotifier {
     String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
     int deliveryFee = 16000,
     int discount = 0,
+    String? couponCode,
     double? restaurantLat,
     double? restaurantLng,
     double? userLat,
     double? userLng,
   }) async {
+    final effectiveCoupon = (couponCode != null && couponCode.trim().isNotEmpty)
+        ? couponCode.trim().toUpperCase()
+        : (activeCouponCode != null && activeCouponCode!.trim().isNotEmpty
+            ? activeCouponCode!.trim().toUpperCase()
+            : null);
     try {
       final backendOrder = await OrderApiService().createOrder(
         restaurantId: restaurantId ?? '',
@@ -270,7 +277,9 @@ class OrderData extends ChangeNotifier {
         deliveryAddress: deliveryAddress,
         paymentMethod: paymentMethod,
         deliveryFee: deliveryFee,
+        couponCode: effectiveCoupon,
       );
+      activeCouponCode = null;
       backendOrder.restaurantLat = restaurantLat;
       backendOrder.restaurantLng = restaurantLng;
       backendOrder.userLat = userLat;

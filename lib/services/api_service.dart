@@ -274,6 +274,22 @@ class ApiService {
     }
   }
 
+  /// Lấy danh sách voucher khuyến mãi của nhà hàng
+  static Future<List<Map<String, dynamic>>> getRestaurantVouchers(String restaurantId) async {
+    try {
+      final baseUrl = ProfileApiService().baseUrl;
+      final uri = Uri.parse('$baseUrl/restaurants/$restaurantId/vouchers');
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(utf8.decode(response.bodyBytes));
+        return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (e) {
+      debugPrint('Error getRestaurantVouchers: $e');
+    }
+    return [];
+  }
+
   /// TỰ ĐỘNG ĐỊNH VỊ THÀNH PHỐ VÀ TỌA ĐỘ THEO MẠNG INTERNET/IP CỦA MÁY TÍNH (HTTPS)
   static Future<Map<String, dynamic>?> getIpLocation() async {
     try {

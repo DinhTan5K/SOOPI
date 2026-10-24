@@ -81,7 +81,7 @@ public sealed class VouchersController(SoopiDbContext db, VoucherService voucher
         if (!await db.Restaurants.AnyAsync(r => r.Id == restaurantId && r.IsActive && !r.IsLocked
             && r.ApprovalStatus == "Approved", ct)) return NotFound();
         var now = DateTime.UtcNow;
-        var rows = await db.Coupons.AsNoTracking().Where(c => c.RestaurantId == restaurantId && c.IsActive
+        var rows = await db.Coupons.AsNoTracking().Where(c => (c.RestaurantId == restaurantId || c.RestaurantId == null) && c.IsActive
             && (c.StartsAt == null || c.StartsAt <= now) && (c.EndsAt == null || c.EndsAt >= now)
             && (c.UsageLimit == null || c.UsedCount < c.UsageLimit)
             && (c.MenuItemId == null || db.MenuItems.Any(m => m.Id == c.MenuItemId && m.Category!.RestaurantId == restaurantId)))
