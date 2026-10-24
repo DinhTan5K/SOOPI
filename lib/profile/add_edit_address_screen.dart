@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_address.dart';
 import '../services/profile_api_service.dart';
 import '../services/geocoding_service.dart';
+import '../services/address_suggestion_service.dart';
 
 class AddEditAddressScreen extends StatefulWidget {
   final UserAddress? addressToEdit;
@@ -25,6 +26,9 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
   String _selectedLabel = 'Nhà riêng';
   bool _isDefault = false;
   bool _isLoading = false;
+  bool _isSearchingAddress = false;
+  List<AddressSuggestion> _addressSuggestions = [];
+  int _addressSearchVersion = 0;
 
   final List<String> _labels = ['Nhà riêng', 'Văn phòng', 'Khác'];
 
@@ -44,11 +48,56 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
 
   @override
   void dispose() {
+    _addressSearchVersion++;
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
     _noteController.dispose();
     super.dispose();
+  }
+
+  Future<void> _onAddressChanged(String value) async {
+    final version = ++_addressSearchVersion;
+    if (value.trim().length < 3) {
+      if (mounted) {
+        setState(() {
+          _addressSuggestions = [];
+          _isSearchingAddress = false;
+        });
+      }
+      return;
+    }
+
+    setState(() => _isSearchingAddress = true);
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!mounted || version != _addressSearchVersion) return;
+
+    try {
+      final suggestions = await AddressSuggestionService.search(value.trim());
+      if (!mounted || version != _addressSearchVersion) return;
+      setState(() {
+        _addressSuggestions = suggestions;
+        _isSearchingAddress = false;
+      });
+    } catch (_) {
+      if (!mounted || version != _addressSearchVersion) return;
+      setState(() {
+        _addressSuggestions = [];
+        _isSearchingAddress = false;
+      });
+    }
+  }
+
+  void _selectAddressSuggestion(AddressSuggestion suggestion) {
+    _addressSearchVersion++;
+    _addressController.value = TextEditingValue(
+      text: suggestion.displayName,
+      selection: TextSelection.collapsed(offset: suggestion.displayName.length),
+    );
+    setState(() {
+      _addressSuggestions = [];
+      _isSearchingAddress = false;
+    });
   }
 
   Future<void> _saveAddress() async {
@@ -204,8 +253,48 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
                 hint: 'Số nhà, tên đường, phường/xã, quận/huyện, thành phố',
                 icon: Icons.location_on_outlined,
                 maxLines: 3,
+                onChanged: _onAddressChanged,
                 validator: (val) => val == null || val.trim().isEmpty ? 'Vui lòng nhập địa chỉ cụ thể' : null,
               ),
+              if (_isSearchingAddress)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: LinearProgressIndicator(minHeight: 2),
+                ),
+              if (_addressSuggestions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: _addressSuggestions.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      color: Colors.grey.shade200,
+                    ),
+                    itemBuilder: (context, index) {
+                      final suggestion = _addressSuggestions[index];
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.location_on_outlined, color: Colors.orange),
+                        title: Text(
+                          suggestion.displayName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        onTap: () => _selectAddressSuggestion(suggestion),
+                      );
+                    },
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
 
               // Ghi chú cho tài xế
@@ -279,6 +368,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     int maxLines = 1,
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
+    void Function(String)? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -290,6 +380,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           maxLines: maxLines,
           keyboardType: keyboardType,
           validator: validator,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),

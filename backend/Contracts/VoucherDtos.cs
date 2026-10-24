@@ -16,5 +16,6 @@ public sealed record VoucherInput(
 
 public sealed record VoucherStatusInput(bool IsActive);
 public sealed record VoucherPreviewInput([Required] string CouponCode);
+public sealed record DirectVoucherPreviewInput([Required] string CouponCode, [Required] List<CartLineRequest> Items);
 public sealed record VoucherPreview(string CouponCode, decimal Subtotal, decimal EligibleAmount,
     decimal DiscountAmount, decimal DeliveryFee, decimal TotalAmount);

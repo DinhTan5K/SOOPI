@@ -4,7 +4,9 @@ public sealed record CheckoutRequest(
     Guid AddressId,
     string PaymentMethod,
     string? CouponCode,
-    string Note);
+    string Note,
+    double? UserLat = null,
+    double? UserLng = null);
 
 public sealed record DirectOrderRequest(
     Guid RestaurantId,
@@ -13,5 +15,7 @@ public sealed record DirectOrderRequest(
     Guid? AddressId,
     string PaymentMethod,
     string? CouponCode,
-    string? Note);
+    string? Note,
+    double? UserLat = null,
+    double? UserLng = null);
 

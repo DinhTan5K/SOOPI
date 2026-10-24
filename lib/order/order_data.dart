@@ -254,6 +254,7 @@ class OrderData extends ChangeNotifier {
     double? restaurantLng,
     double? userLat,
     double? userLng,
+    String? couponCode,
   }) async {
     try {
       final backendOrder = await OrderApiService().createOrder(
@@ -264,6 +265,9 @@ class OrderData extends ChangeNotifier {
         deliveryAddress: deliveryAddress,
         paymentMethod: paymentMethod,
         deliveryFee: deliveryFee,
+        couponCode: couponCode,
+        userLat: userLat,
+        userLng: userLng,
       );
       backendOrder.restaurantLat = restaurantLat;
       backendOrder.restaurantLng = restaurantLng;
@@ -282,6 +286,9 @@ class OrderData extends ChangeNotifier {
       return backendOrder;
     } catch (e) {
       debugPrint('OrderData.createOrder Backend error: $e, fallback local');
+      if (couponCode != null && couponCode.trim().isNotEmpty) {
+        rethrow;
+      }
       final tempId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
       final newOrder = OrderModel(
         id: tempId,

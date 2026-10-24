@@ -146,8 +146,8 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
             DeliveryAddress = address.FullAddress,
             Subtotal = subtotal,
             DiscountAmount = discount,
-            DeliveryFee = 15000,
-            TotalAmount = subtotal - discount + 15000,
+            DeliveryFee = CalculateDeliveryFee(restaurant, input.UserLat, input.UserLng),
+            TotalAmount = subtotal - discount + CalculateDeliveryFee(restaurant, input.UserLat, input.UserLng),
             CouponCode = coupon?.Code,
             PaymentMethod = paymentMethod,
             PaymentStatus = paymentMethod == "Cash" ? "Unpaid" : "Paid",
@@ -287,7 +287,7 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
             _ => "Cash"
         };
 
-        const decimal deliveryFee = 16000m;
+        var deliveryFee = CalculateDeliveryFee(restaurant, input.UserLat, input.UserLng);
         var order = new FoodOrder
         {
             Id = Guid.NewGuid(),
@@ -337,6 +337,23 @@ public sealed class OrderService(SoopiDbContext db, IOrderRepository orders, IHu
         await db.Entry(order).Collection(o => o.Items).LoadAsync(ct);
 
         return order;
+    }
+
+    private static decimal CalculateDeliveryFee(Restaurant restaurant, double? userLat, double? userLng)
+    {
+        if (!userLat.HasValue || !userLng.HasValue || !restaurant.Latitude.HasValue || !restaurant.Longitude.HasValue)
+            return 16000m;
+
+        const double radians = Math.PI / 180d;
+        var lat1 = userLat.Value * radians;
+        var lat2 = (double)restaurant.Latitude.Value * radians;
+        var deltaLat = ((double)restaurant.Latitude.Value - userLat.Value) * radians;
+        var deltaLng = ((double)restaurant.Longitude.Value - userLng.Value) * radians;
+        var a = Math.Pow(Math.Sin(deltaLat / 2), 2)
+            + Math.Cos(lat1) * Math.Cos(lat2) * Math.Pow(Math.Sin(deltaLng / 2), 2);
+        var distanceKm = 12742d * Math.Asin(Math.Sqrt(Math.Clamp(a, 0d, 1d)));
+        // 5.000đ phí cơ bản + 2.000đ cho mỗi km (làm tròn lên).
+        return 5000m + (decimal)Math.Ceiling(distanceKm) * 2000m;
     }
 
     public Task<List<FoodOrder>> History(Guid userId, CancellationToken ct) =>
