@@ -19,3 +19,16 @@ public sealed record LockInput(bool Locked, [StringLength(1000)] string? Reason)
 public sealed record PageResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
 public sealed record UpdateOrderStatusInput([Required] string Status, string? Note);
+
+public sealed record UpdateUserRoleInput([Required] string Role);
+
+public sealed record GlobalVoucherInput(
+    [Required, StringLength(50)] string Code,
+    [Required] string DiscountType,
+    [Range(0.01, 9999999999.99)] decimal DiscountValue,
+    [Range(0, 9999999999.99)] decimal MinOrderAmount,
+    [Range(0.01, 9999999999.99)] decimal? MaxDiscount,
+    DateTimeOffset? StartsAt,
+    DateTimeOffset? EndsAt,
+    [Range(1, int.MaxValue)] int? UsageLimit,
+    bool IsActive = true);

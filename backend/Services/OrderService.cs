@@ -28,7 +28,8 @@ public sealed class OrderService(
     IOrderRepository orders,
     IHubContext<OrderHub> hubContext,
     IOrderDispatchQueue dispatchQueue,
-    IDriverLocationService driverLocationService) : IOrderService
+    IDriverLocationService driverLocationService,
+    VoucherService vouchers) : IOrderService
 {
     public async Task<ShoppingCart> Cart(Guid userId, CancellationToken ct)
     {
