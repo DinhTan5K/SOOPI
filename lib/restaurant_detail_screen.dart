@@ -1396,7 +1396,6 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
                           final finalAddr = _deliveryAddress ?? widget.userAddress ?? 'Địa chỉ nhận hàng của bạn';
                           setSheetState(() => isSubmitting = true);
                           try {
-                            order_data.OrderData().activeCouponCode = appliedCouponCode;
                             final newOrder = await order_data.OrderData().createOrder(
                               restaurantId: widget.restaurant.id,
                               restaurantName: widget.restaurant.name,
