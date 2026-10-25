@@ -9,6 +9,7 @@ import 'address_list_screen.dart';
 import 'change_password_screen.dart';
 import '../order/order_list_screen.dart';
 import '../shipper/shipper_main_screen.dart';
+import '../admin/admin_main_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onBackToHome;
@@ -416,6 +417,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                 ),
               ]),
+
+              if (profile.role.toLowerCase() == 'admin') ...[
+                const SizedBox(height: 14),
+                _buildSectionTitle('Quản trị sàn SOOPI FOOD'),
+                _buildMenuCard([
+                  _buildMenuItem(
+                    icon: Icons.admin_panel_settings,
+                    iconColor: Colors.purple,
+                    title: 'Cổng Quản trị viên (Admin Portal)',
+                    subtitle: 'Duyệt quán, quản lý người dùng, đơn hàng',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const AdminMainScreen()),
+                      );
+                    },
+                  ),
+                ]),
+              ],
 
               const SizedBox(height: 14),
 

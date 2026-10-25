@@ -6,6 +6,7 @@ import 'auth_screen.dart';
 import 'home.dart';
 import 'merchant/merchant_screen.dart';
 import 'shipper/shipper_main_screen.dart';
+import 'admin/admin_main_screen.dart';
 import 'services/api_config.dart';
 import 'services/profile_api_service.dart';
 
@@ -42,6 +43,7 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/merchant': (context) => const MerchantScreen(),
         '/shipper': (context) => const ShipperMainScreen(),
+        '/admin': (context) => const AdminMainScreen(),
       },
       home: const AuthGate(),
     );
@@ -123,6 +125,9 @@ class _RoleBasedHomeState extends State<RoleBasedHome> {
     }
 
     final r = (_role ?? 'Customer').trim().toLowerCase();
+    if (r == 'admin') {
+      return const AdminMainScreen();
+    }
     if (r == 'owner' || r == 'restaurantowner') {
       return const MerchantScreen();
     }

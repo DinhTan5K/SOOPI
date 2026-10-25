@@ -179,6 +179,27 @@ using (var scope = app.Services.CreateScope())
         {
             app.Logger.LogWarning("Lỗi chạy migration Coupons: {Message}", exMigration.Message);
         }
+
+        // Tự động kiểm tra và đồng bộ Admin từ appsettings.json
+        try
+        {
+            var adminEmails = builder.Configuration.GetSection("AdminSettings:AdminEmails").Get<string[]>() ?? [];
+            foreach (var email in adminEmails)
+            {
+                var adminUser = dbContext.Users.FirstOrDefault(u => u.Email.ToLower() == email.ToLower());
+                if (adminUser != null && adminUser.Role != "Admin")
+                {
+                    adminUser.Role = "Admin";
+                    adminUser.UpdatedAt = DateTimeOffset.UtcNow;
+                    app.Logger.LogInformation("Đã tự động gán vai trò Admin cho: {Email}", email);
+                }
+            }
+            dbContext.SaveChanges();
+        }
+        catch (Exception exAdmin)
+        {
+            app.Logger.LogWarning("Lỗi kiểm tra quyền Admin: {Message}", exAdmin.Message);
+        }
     }
     catch (Exception ex)
     {
