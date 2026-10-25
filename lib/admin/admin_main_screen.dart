@@ -47,14 +47,6 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
     }
   }
 
-  void _switchToUserMode() {
-    Navigator.pushNamed(context, '/home');
-  }
-
-  void _switchToMerchantMode() {
-    Navigator.pushNamed(context, '/merchant');
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 800;
@@ -103,36 +95,6 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
           ],
         ),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.swap_horiz, color: Colors.white),
-            tooltip: 'Chuyển chế độ xem',
-            onSelected: (val) {
-              if (val == 'home') _switchToUserMode();
-              if (val == 'merchant') _switchToMerchantMode();
-            },
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(
-                value: 'home',
-                child: Row(
-                  children: [
-                    Icon(Icons.shopping_bag_outlined, color: Colors.deepOrange, size: 20),
-                    SizedBox(width: 8),
-                    Text('Chuyển sang Khách hàng'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'merchant',
-                child: Row(
-                  children: [
-                    Icon(Icons.storefront_outlined, color: Colors.deepOrange, size: 20),
-                    SizedBox(width: 8),
-                    Text('Chuyển sang Chủ quán'),
-                  ],
-                ),
-              ),
-            ],
-          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white70),
             tooltip: 'Đăng xuất',
