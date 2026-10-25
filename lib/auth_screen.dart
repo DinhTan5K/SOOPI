@@ -10,6 +10,7 @@ import 'widgets/otp_verification_dialog.dart';
 import 'widgets/forgot_password_dialog.dart';
 import 'merchant/merchant_login_screen.dart';
 import 'shipper/shipper_main_screen.dart';
+import 'admin/admin_main_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -91,12 +92,19 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
         }
 
         if (mounted) {
+          Widget targetScreen;
+          if (role == 'admin') {
+            targetScreen = const AdminMainScreen();
+          } else if (role == 'shipper') {
+            targetScreen = const ShipperMainScreen();
+          } else {
+            targetScreen = const HomeScreen();
+          }
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => role == 'shipper'
-                  ? const ShipperMainScreen()
-                  : const HomeScreen(),
+              builder: (context) => targetScreen,
             ),
           );
         }
