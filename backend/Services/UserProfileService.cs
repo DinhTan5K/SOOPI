@@ -9,11 +9,13 @@ namespace Soopi.Backend.Services
     {
         private readonly SoopiDbContext _db;
         private readonly ILogger<UserProfileService> _logger;
+        private readonly IConfiguration? _config;
 
-        public UserProfileService(SoopiDbContext db, ILogger<UserProfileService> logger)
+        public UserProfileService(SoopiDbContext db, ILogger<UserProfileService> logger, IConfiguration? config = null)
         {
             _db = db;
             _logger = logger;
+            _config = config;
         }
 
         public async Task<UserProfileDto> GetOrCreateUserProfileAsync(string firebaseUid, string email, string? displayName = null, string? photoUrl = null)
@@ -22,24 +24,32 @@ namespace Soopi.Backend.Services
                 .Include(u => u.Addresses)
                 .FirstOrDefaultAsync(u => u.FirebaseUid == firebaseUid);
 
+            var adminEmails = _config?.GetSection("AdminSettings:AdminEmails").Get<string[]>() ?? [];
+
             if (user == null)
             {
+                var isAdmin = adminEmails.Any(e => string.Equals(e, email, StringComparison.OrdinalIgnoreCase));
+                user = new AppUser
                 {
-                    user = new AppUser
-                    {
-                        Id = Guid.NewGuid(),
-                        FirebaseUid = firebaseUid,
-                        Email = email,
-                        FullName = !string.IsNullOrEmpty(displayName) ? displayName : email.Split('@')[0],
-                        AvatarUrl = photoUrl,
-                        Gender = "Nam",
-                        Role = "Customer",
-                        CreatedAt = DateTimeOffset.UtcNow
-                    };
-                    await _db.Users.AddAsync(user);
-                    await _db.SaveChangesAsync();
-                    _logger.LogInformation("Đã tự động tạo hồ sơ người dùng mới trong DB cho UID: {Uid}", firebaseUid);
-                }
+                    Id = Guid.NewGuid(),
+                    FirebaseUid = firebaseUid,
+                    Email = email,
+                    FullName = !string.IsNullOrEmpty(displayName) ? displayName : email.Split('@')[0],
+                    AvatarUrl = photoUrl,
+                    Gender = "Nam",
+                    Role = isAdmin ? "Admin" : "Customer",
+                    CreatedAt = DateTimeOffset.UtcNow
+                };
+                await _db.Users.AddAsync(user);
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Đã tự động tạo hồ sơ người dùng mới trong DB cho UID: {Uid}", firebaseUid);
+            }
+            else if (adminEmails.Any(e => string.Equals(e, user.Email, StringComparison.OrdinalIgnoreCase)) && user.Role != "Admin")
+            {
+                user.Role = "Admin";
+                user.UpdatedAt = DateTimeOffset.UtcNow;
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Đã tự động đồng bộ vai trò Admin cho: {Email}", user.Email);
             }
 
             return MapToProfileDto(user);

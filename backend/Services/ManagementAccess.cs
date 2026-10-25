@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using SoopiFoodBE.DataAccess;
 using SoopiFoodBE.Models;
 
@@ -12,7 +13,7 @@ public sealed class ManagementException(int status, string message) : Exception(
     public int Status { get; } = status;
 }
 
-public sealed class CurrentAccount(SoopiDbContext db, IHttpContextAccessor accessor)
+public sealed class CurrentAccount(SoopiDbContext db, IHttpContextAccessor accessor, IConfiguration? config = null)
 {
     public async Task<AppUser> Get(bool create = false, CancellationToken ct = default)
     {
@@ -23,12 +24,26 @@ public sealed class CurrentAccount(SoopiDbContext db, IHttpContextAccessor acces
             ?? principal.FindFirstValue("sub");
         if (string.IsNullOrWhiteSpace(uid)) throw new ManagementException(401, "Firebase UID is missing.");
         var account = await db.Users.SingleOrDefaultAsync(u => u.FirebaseUid == uid, ct);
+        var adminEmails = config?.GetSection("AdminSettings:AdminEmails").Get<string[]>() ?? [];
+
+        if (account is not null)
+        {
+            if (adminEmails.Any(e => string.Equals(e, account.Email, StringComparison.OrdinalIgnoreCase)) && account.Role != "Admin")
+            {
+                account.Role = "Admin";
+                account.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
         if (account is null && create)
         {
             var email = principal.FindFirstValue(ClaimTypes.Email) ?? principal.FindFirstValue("email");
             if (string.IsNullOrWhiteSpace(email)) throw new ManagementException(400, "An email identity is required.");
+            var isAdmin = adminEmails.Any(e => string.Equals(e, email, StringComparison.OrdinalIgnoreCase));
             account = new AppUser { Id = Guid.NewGuid(), FirebaseUid = uid, Email = email,
-                FullName = principal.FindFirstValue("name") ?? email.Split('@')[0] };
+                FullName = principal.FindFirstValue("name") ?? email.Split('@')[0],
+                Role = isAdmin ? "Admin" : "Customer" };
             db.Users.Add(account);
             try { await db.SaveChangesAsync(ct); }
             catch (DbUpdateException)
@@ -46,6 +61,13 @@ public sealed class CurrentAccount(SoopiDbContext db, IHttpContextAccessor acces
     public async Task<AppUser> Admin(CancellationToken ct = default)
     {
         var user = await Get(ct: ct);
+        var adminEmails = config?.GetSection("AdminSettings:AdminEmails").Get<string[]>() ?? [];
+        if (adminEmails.Any(e => string.Equals(e, user.Email, StringComparison.OrdinalIgnoreCase)) && user.Role != "Admin")
+        {
+            user.Role = "Admin";
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
         if (user.Role != "Admin") throw new ManagementException(403, "Administrator access is required.");
         return user;
     }
