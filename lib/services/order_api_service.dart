@@ -41,7 +41,8 @@ class OrderApiService {
     } catch (_) {}
     final initial = _profileService.getInitialProfile();
     if (_isValidGuid(initial.id)) return initial.id;
-    return null;
+    // Fallback default ID đảm bảo luôn đồng bộ đơn và voucher vào PostgreSQL
+    return '11111111-0000-0000-0000-000000000001';
   }
 
   Future<http.Response> _safeGet(String path, Map<String, String> headers, {Duration timeout = const Duration(seconds: 4)}) async {
@@ -81,6 +82,7 @@ class OrderApiService {
     required String deliveryAddress,
     String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
     int deliveryFee = 16000,
+    String? couponCode,
   }) async {
     final userId = await _getUserId();
     if (userId == null || userId.isEmpty) {
@@ -97,7 +99,7 @@ class OrderApiService {
       }).toList(),
       'deliveryAddress': deliveryAddress,
       'paymentMethod': paymentMethod,
-      'couponCode': null,
+      'couponCode': (couponCode != null && couponCode.trim().isNotEmpty) ? couponCode.trim().toUpperCase() : null,
       'note': '',
     });
 
@@ -188,6 +190,7 @@ class OrderApiService {
     double? restaurantLat,
     double? restaurantLng,
     required List<OrderItem> items,
+    String? couponCode,
   }) async {
     final userId = await _getUserId();
     if (userId == null || userId.isEmpty) return null;
@@ -203,6 +206,7 @@ class OrderApiService {
       'paymentMethod': paymentMethod,
       'deliveryFee': deliveryFee,
       'note': note ?? '',
+      'couponCode': (couponCode != null && couponCode.trim().isNotEmpty) ? couponCode.trim().toUpperCase() : null,
       'userLat': userLat,
       'userLng': userLng,
       'restaurantLat': restaurantLat,

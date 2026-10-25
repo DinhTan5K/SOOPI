@@ -26,6 +26,7 @@ public interface IOrderService
 public sealed class OrderService(
     SoopiDbContext db,
     IOrderRepository orders,
+    VoucherService vouchers,
     IHubContext<OrderHub> hubContext,
     IOrderDispatchQueue dispatchQueue,
     IDriverLocationService driverLocationService,
@@ -131,11 +132,16 @@ public sealed class OrderService(
 
         if (!string.IsNullOrWhiteSpace(input.CouponCode))
         {
-            var result = await vouchers.Evaluate(input.CouponCode, cart.RestaurantId!.Value,
-                cart.Items.Select(i => new VoucherLine(i.MenuItemId, i.MenuItem!.Price, i.Quantity)).ToList(), ct);
+            var lines = cart.Items
+                .Where(i => i.MenuItem != null)
+                .Select(i => new VoucherLine(i.MenuItemId, i.MenuItem!.Price, i.Quantity))
+                .ToList();
+            var result = await vouchers.Evaluate(input.CouponCode, cart.RestaurantId!.Value, lines, ct);
             coupon = result.Coupon;
             discount = result.Discount;
             coupon.UsedCount++;
+            db.Coupons.Update(coupon);
+            db.Entry(coupon).Property(c => c.UsedCount).IsModified = true;
         }
 
         var restaurant = await db.Restaurants.FindAsync([cart.RestaurantId], ct)
@@ -202,6 +208,7 @@ public sealed class OrderService(
             user = new AppUser
             {
                 Id = userId,
+                FirebaseUid = $"guest_{userId:N}",
                 Role = "Customer",
                 FullName = "Khách hàng SOOPI",
                 Email = $"{userId}@soopi.vn",
@@ -282,11 +289,16 @@ public sealed class OrderService(
         Coupon? coupon = null;
         if (!string.IsNullOrWhiteSpace(input.CouponCode))
         {
-            var result = await vouchers.Evaluate(input.CouponCode, restaurant.Id,
-                orderItems.Select(i => new VoucherLine(i.MenuItemId!.Value, i.UnitPrice, i.Quantity)).ToList(), ct);
+            var lines = orderItems
+                .Where(i => i.MenuItemId.HasValue && i.MenuItemId.Value != Guid.Empty)
+                .Select(i => new VoucherLine(i.MenuItemId!.Value, i.UnitPrice, i.Quantity))
+                .ToList();
+            var result = await vouchers.Evaluate(input.CouponCode, restaurant.Id, lines, ct);
             coupon = result.Coupon;
             discount = result.Discount;
             coupon.UsedCount++;
+            db.Coupons.Update(coupon);
+            db.Entry(coupon).Property(c => c.UsedCount).IsModified = true;
         }
 
         var paymentMethod = (input.PaymentMethod ?? "").ToLower() switch

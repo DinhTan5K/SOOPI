@@ -29,6 +29,10 @@ public sealed class OrdersController(
         {
             return NotFound();
         }
+        catch (ManagementException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
         catch (InvalidOperationException exception)
         {
             return BadRequest(new { error = exception.Message });
@@ -48,6 +52,10 @@ public sealed class OrdersController(
         catch (KeyNotFoundException exception)
         {
             return NotFound(new { error = exception.Message });
+        }
+        catch (ManagementException exception)
+        {
+            return BadRequest(new { error = exception.Message });
         }
         catch (InvalidOperationException exception)
         {
@@ -69,6 +77,10 @@ public sealed class OrdersController(
         catch (KeyNotFoundException exception)
         {
             return NotFound(new { error = exception.Message });
+        }
+        catch (ManagementException exception)
+        {
+            return BadRequest(new { error = exception.Message });
         }
         catch (InvalidOperationException exception)
         {
@@ -116,6 +128,10 @@ public sealed class OrdersController(
         catch (KeyNotFoundException)
         {
             return NotFound();
+        }
+        catch (ManagementException exception)
+        {
+            return BadRequest(new { error = exception.Message });
         }
         catch (InvalidOperationException exception)
         {
