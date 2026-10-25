@@ -24,7 +24,7 @@ public sealed class InMemoryDriverLocationService : IDriverLocationService
 {
     // Lưu trữ vị trí các tài xế trong RAM an toàn đa luồng
     private readonly ConcurrentDictionary<Guid, DriverLocationInfo> _drivers = new();
-    
+
     // Giữ trạng thái trực tuyến 30 phút để chống trình duyệt ẩn tab ngắt timer khi test đa cửa sổ
     private static readonly TimeSpan MaxInactivePing = TimeSpan.FromMinutes(30);
 

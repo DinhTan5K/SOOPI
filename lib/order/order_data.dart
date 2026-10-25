@@ -257,11 +257,11 @@ class OrderData extends ChangeNotifier {
     String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
     int deliveryFee = 16000,
     int discount = 0,
-    String? couponCode,
     double? restaurantLat,
     double? restaurantLng,
     double? userLat,
     double? userLng,
+    String? couponCode,
   }) async {
     final effectiveCoupon = (couponCode != null && couponCode.trim().isNotEmpty)
         ? couponCode.trim().toUpperCase()
@@ -278,6 +278,8 @@ class OrderData extends ChangeNotifier {
         paymentMethod: paymentMethod,
         deliveryFee: deliveryFee,
         couponCode: effectiveCoupon,
+        userLat: userLat,
+        userLng: userLng,
       );
       activeCouponCode = null;
       backendOrder.restaurantLat = restaurantLat;
@@ -290,6 +292,9 @@ class OrderData extends ChangeNotifier {
       return backendOrder;
     } catch (e) {
       debugPrint('OrderData.createOrder Backend error: $e, fallback local');
+      if (couponCode != null && couponCode.trim().isNotEmpty) {
+        rethrow;
+      }
       final tempId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
       final newOrder = OrderModel(
         id: tempId,

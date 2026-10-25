@@ -83,6 +83,8 @@ class OrderApiService {
     String paymentMethod = 'Tiền mặt khi nhận hàng (COD)',
     int deliveryFee = 16000,
     String? couponCode,
+    double? userLat,
+    double? userLng,
   }) async {
     final userId = await _getUserId();
     if (userId == null || userId.isEmpty) {
@@ -101,6 +103,8 @@ class OrderApiService {
       'paymentMethod': paymentMethod,
       'couponCode': (couponCode != null && couponCode.trim().isNotEmpty) ? couponCode.trim().toUpperCase() : null,
       'note': '',
+      'userLat': userLat,
+      'userLng': userLng,
     });
 
     final response = await _safePost('/users/$userId/orders/direct', headers, body);
@@ -111,6 +115,49 @@ class OrderApiService {
     } else {
       throw Exception('Lỗi đặt hàng (${response.statusCode}): ${response.body}');
     }
+  }
+
+  Future<Map<String, dynamic>> previewDirectVoucher({
+    required String restaurantId,
+    required String couponCode,
+    required List<OrderItem> items,
+  }) async {
+    final headers = await _getHeaders();
+    final response = await _safePost(
+      '/restaurants/$restaurantId/vouchers/preview-direct',
+      headers,
+      jsonEncode({
+        'couponCode': couponCode,
+        'items': items.map((item) => {
+          'menuItemId': item.id,
+          'quantity': item.quantity,
+          'note': item.note,
+        }).toList(),
+      }),
+    );
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    if (response.statusCode != 200) {
+      final message = data is Map<String, dynamic>
+          ? data['error']?.toString() ?? data['title']?.toString()
+          : null;
+      throw Exception(message ?? 'Không áp dụng được voucher.');
+    }
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  /// Lấy danh sách voucher khả dụng của nhà hàng (GET /api/restaurants/{restaurantId}/vouchers)
+  Future<List<Map<String, dynamic>>> fetchRestaurantVouchers(String restaurantId) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await _safeGet('/restaurants/$restaurantId/vouchers', headers);
+      if (response.statusCode == 200) {
+        final list = jsonDecode(utf8.decode(response.bodyBytes)) as List;
+        return list.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+      }
+    } catch (e) {
+      debugPrint('fetchRestaurantVouchers error: $e');
+    }
+    return [];
   }
 
   /// UC07: Lấy danh sách lịch sử đơn hàng từ Backend (GET /api/users/{userId}/orders)

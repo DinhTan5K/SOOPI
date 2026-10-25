@@ -82,11 +82,44 @@ public sealed class VouchersController(SoopiDbContext db, VoucherService voucher
             && r.ApprovalStatus == "Approved", ct)) return NotFound();
         var now = DateTime.UtcNow;
         var rows = await db.Coupons.AsNoTracking().Where(c => (c.RestaurantId == restaurantId || c.RestaurantId == null) && c.IsActive
-            && (c.StartsAt == null || c.StartsAt <= now) && (c.EndsAt == null || c.EndsAt >= now)
             && (c.UsageLimit == null || c.UsedCount < c.UsageLimit)
             && (c.MenuItemId == null || db.MenuItems.Any(m => m.Id == c.MenuItemId && m.Category!.RestaurantId == restaurantId)))
             .OrderBy(c => c.Code).ToListAsync(ct);
-        return Ok(rows.Select(VoucherService.View));
+        var valid = rows.Where(c =>
+            (!c.StartsAt.HasValue || VoucherService.ToUtc(c.StartsAt.Value) <= now.AddMinutes(5)) &&
+            (!c.EndsAt.HasValue || VoucherService.ToUtc(c.EndsAt.Value) >= now)).ToList();
+        return Ok(valid.Select(VoucherService.View));
+    }
+
+    [HttpPost("restaurants/{restaurantId:guid}/vouchers/preview-direct")]
+    public async Task<IActionResult> PreviewDirect(
+        Guid restaurantId, DirectVoucherPreviewInput input, CancellationToken ct)
+    {
+        if (input.Items.Count == 0) return BadRequest(new { error = "Giỏ hàng trống." });
+        var itemIds = input.Items.Select(item => item.MenuItemId).Distinct().ToList();
+        var menuItems = await db.MenuItems
+            .Where(item => itemIds.Contains(item.Id) && item.Category!.RestaurantId == restaurantId && item.IsAvailable)
+            .ToDictionaryAsync(item => item.Id, ct);
+        if (menuItems.Count != itemIds.Count)
+            return BadRequest(new { error = "Có món không còn khả dụng tại quán này." });
+
+        try
+        {
+            var lines = input.Items.Select(item =>
+                new VoucherLine(item.MenuItemId, menuItems[item.MenuItemId].Price, item.Quantity)).ToList();
+            var result = await vouchers.Evaluate(input.CouponCode, restaurantId, lines, ct);
+            return Ok(new
+            {
+                couponCode = result.Coupon.Code,
+                subtotal = lines.Sum(line => line.UnitPrice * line.Quantity),
+                eligibleAmount = result.Eligible,
+                discountAmount = result.Discount
+            });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
     }
 
     [Authorize, HttpPost("users/{userId:guid}/cart/vouchers/preview")]
