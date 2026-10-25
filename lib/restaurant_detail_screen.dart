@@ -8,6 +8,7 @@ import 'services/profile_api_service.dart';
 import 'services/api_service.dart';
 import 'order/order_data.dart' as order_data;
 import 'order/order_tracking_screen.dart';
+import 'services/order_api_service.dart';
 
 class RestaurantDetailScreen extends StatefulWidget {
   final ApiRestaurant restaurant;
@@ -35,16 +36,14 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
 
   // Giỏ hàng lưu số lượng của từng món ăn: itemId -> quantity
   final Map<String, int> _cartItems = {};
+  final Map<String, String> _cartNotes = {};
 
   final ScrollController _menuScrollController = ScrollController();
 
   String? _deliveryAddress;
   double? _deliveryLat;
   double? _deliveryLng;
-
-  List<Map<String, dynamic>> _vouchers = [];
-  bool _isLoadingVouchers = true;
-  String? _selectedCouponCode;
+  List<Map<String, dynamic>> _fetchedVouchers = [];
 
   @override
   void initState() {
@@ -54,29 +53,15 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
     _deliveryLat = widget.userLat;
     _deliveryLng = widget.userLng;
     _loadSavedAddressFallback();
-    _loadVouchers();
+    _loadRestaurantVouchers();
   }
 
-  Future<void> _loadVouchers() async {
-    try {
-      final baseUrl = ProfileApiService().baseUrl;
-      final uri = Uri.parse('$baseUrl/restaurants/${widget.restaurant.id}/vouchers');
-      final response = await http.get(uri).timeout(const Duration(seconds: 4));
-      if (response.statusCode == 200) {
-        final List<dynamic> list = jsonDecode(utf8.decode(response.bodyBytes));
-        if (mounted) {
-          setState(() {
-            _vouchers = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-            _isLoadingVouchers = false;
-          });
-        }
-        return;
-      }
-    } catch (e) {
-      debugPrint('Error _loadVouchers: $e');
-    }
+  Future<void> _loadRestaurantVouchers() async {
+    final list = await OrderApiService().fetchRestaurantVouchers(widget.restaurant.id);
     if (mounted) {
-      setState(() => _isLoadingVouchers = false);
+      setState(() {
+        _fetchedVouchers = list;
+      });
     }
   }
 
@@ -122,20 +107,28 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
 
   // Thuật toán Haversine tính khoảng cách (km)
   double? get _calculatedDistance {
-    if (widget.userLat == null ||
-        widget.userLng == null ||
+    final userLat = _deliveryLat ?? widget.userLat;
+    final userLng = _deliveryLng ?? widget.userLng;
+    if (userLat == null ||
+        userLng == null ||
         widget.restaurant.latitude == null ||
         widget.restaurant.longitude == null) {
       return null;
     }
     const p = 0.017453292519943295;
     final a = 0.5 -
-        cos((widget.restaurant.latitude! - widget.userLat!) * p) / 2 +
-        cos(widget.userLat! * p) *
+        cos((widget.restaurant.latitude! - userLat) * p) / 2 +
+        cos(userLat * p) *
             cos(widget.restaurant.latitude! * p) *
-            (1 - cos((widget.restaurant.longitude! - widget.userLng!) * p)) /
+            (1 - cos((widget.restaurant.longitude! - userLng) * p)) /
             2;
     return 12742 * asin(sqrt(a));
+  }
+
+  int get _deliveryFee {
+    final distance = _calculatedDistance;
+    if (distance == null) return 16000;
+    return 5000 + distance.ceil() * 2000;
   }
 
   void _addToCart(ApiMenuItem item) {
@@ -158,6 +151,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
       final current = _cartItems[item.id] ?? 0;
       if (current <= 1) {
         _cartItems.remove(item.id);
+        _cartNotes.remove(item.id);
       } else {
         _cartItems[item.id] = current - 1;
       }
@@ -475,25 +469,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
 
   // --- DÒNG VOUCHER KHUYẾN MÃI CỦA CỬA HÀNG ---
   Widget _buildVoucherRow() {
-    if (_isLoadingVouchers) {
-      return Container(
-        color: Colors.white,
-        padding: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
-        child: const SizedBox(
-          height: 28,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (_vouchers.isEmpty) {
+    if (_fetchedVouchers.isEmpty) {
       return const SizedBox.shrink();
     }
 
@@ -504,126 +480,43 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
         height: 32,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          itemCount: _vouchers.length,
+          itemCount: _fetchedVouchers.length,
           separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (context, index) {
-            final v = _vouchers[index];
+            final v = _fetchedVouchers[index];
             final code = v['code']?.toString() ?? '';
-            final discountType = v['discountType']?.toString() ?? 'Fixed';
-            final discountVal = (v['discountValue'] as num?)?.toDouble() ?? 0.0;
-            final isSelected = _selectedCouponCode == code;
+            final discountType = v['discountType']?.toString() ?? 'Percent';
+            final discountVal = (v['discountValue'] as num?)?.toInt() ?? 0;
+            final minAmt = (v['minOrderAmount'] as num?)?.toInt() ?? 0;
+            final label = discountType == 'Percent'
+                ? 'Mã $code: Giảm $discountVal% (Đơn ${order_data.money(minAmt)})'
+                : 'Mã $code: Giảm ${order_data.money(discountVal)} (Đơn ${order_data.money(minAmt)})';
 
-            String label;
-            if (discountType == 'Percent') {
-              label = 'Giảm ${discountVal.toInt()}% [$code]';
-            } else {
-              label = 'Giảm ${order_data.money(discountVal.toInt())} [$code]';
-            }
-
-            return InkWell(
-              onTap: () => _showVoucherDetailDialog(v),
-              borderRadius: BorderRadius.circular(6),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.orange.shade100 : Colors.teal.shade50,
-                  border: Border.all(
-                    color: isSelected ? Colors.deepOrange : Colors.teal.shade200,
-                    width: isSelected ? 1.5 : 1,
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.teal.shade50,
+                border: Border.all(color: Colors.teal.shade200),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.confirmation_num_outlined,
+                      size: 14, color: Colors.teal.shade700),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.teal.shade800,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      isSelected ? Icons.check_circle : Icons.confirmation_num_outlined,
-                      size: 14,
-                      color: isSelected ? Colors.deepOrange : Colors.teal.shade700,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: isSelected ? Colors.deepOrange.shade900 : Colors.teal.shade800,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
             );
           },
         ),
-      ),
-    );
-  }
-
-  void _showVoucherDetailDialog(Map<String, dynamic> v) {
-    final code = v['code']?.toString() ?? '';
-    final discountType = v['discountType']?.toString() ?? 'Fixed';
-    final discountVal = (v['discountValue'] as num?)?.toDouble() ?? 0.0;
-    final minOrder = (v['minOrderAmount'] as num?)?.toDouble() ?? 0.0;
-    final maxDiscount = (v['maxDiscount'] as num?)?.toDouble();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.confirmation_num, color: Colors.deepOrange),
-            const SizedBox(width: 8),
-            Text('Mã: #$code', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              discountType == 'Percent'
-                  ? 'Ưu đãi: Giảm ${discountVal.toInt()}% giá trị đơn món'
-                  : 'Ưu đãi: Giảm trực tiếp ${order_data.money(discountVal.toInt())}',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green),
-            ),
-            const SizedBox(height: 8),
-            Text('• Đơn hàng tối thiểu: ${order_data.money(minOrder.toInt())}'),
-            if (maxDiscount != null)
-              Text('• Giảm tối đa: ${order_data.money(maxDiscount.toInt())}'),
-            const SizedBox(height: 8),
-            const Text(
-              'Mã sẽ được tự động áp dụng tại bước thanh toán.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _selectedCouponCode = code;
-              });
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Đã chọn voucher #$code!'),
-                  backgroundColor: Colors.green,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepOrange,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Áp dụng mã này'),
-          ),
-        ],
       ),
     );
   }
@@ -1141,7 +1034,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
             ],
           ),
           ElevatedButton(
-            onPressed: () => _showCheckoutSheet(context, totalPrice, categories),
+            onPressed: () => _showCheckoutSheet(context, categories),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
@@ -1160,438 +1053,412 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
     );
   }
 
-  void _showCheckoutSheet(BuildContext context, double subtotal, List<ApiMenuCategory> categories) {
-    final selectedOrderItems = <order_data.OrderItem>[];
-    for (final cat in categories) {
-      for (final item in cat.items) {
-        final qty = _cartItems[item.id] ?? 0;
-        if (qty > 0) {
-          selectedOrderItems.add(
-            order_data.OrderItem(
-              id: item.id,
-              name: item.name,
-              price: item.price.toInt(),
-              quantity: qty,
-              emoji: '',
-            ),
-          );
+  List<order_data.OrderItem> _currentOrderItems(List<ApiMenuCategory> categories) {
+    final items = <order_data.OrderItem>[];
+    for (final category in categories) {
+      for (final item in category.items) {
+        final quantity = _cartItems[item.id] ?? 0;
+        if (quantity > 0) {
+          items.add(order_data.OrderItem(
+            id: item.id,
+            name: item.name,
+            price: item.price.toInt(),
+            quantity: quantity,
+            note: _cartNotes[item.id] ?? '',
+          ));
         }
       }
     }
+    return items;
+  }
 
-    if (selectedOrderItems.isEmpty) return;
-
-    const deliveryFee = 16000;
-    const paymentMethod = 'Tiền mặt khi nhận hàng (COD)';
-    String? appliedCouponCode = _selectedCouponCode;
-
-    int calculateDiscount(String? code, double sub) {
-      if (code == null || code.trim().isEmpty) return 0;
-      final match = _vouchers.firstWhere(
-        (v) => (v['code']?.toString().toUpperCase() == code.trim().toUpperCase()),
-        orElse: () => {},
-      );
-      if (match.isEmpty) return 0;
-      final minOrder = (match['minOrderAmount'] as num?)?.toDouble() ?? 0.0;
-      if (sub < minOrder) return 0;
-      final discountType = match['discountType']?.toString() ?? 'Fixed';
-      final discountVal = (match['discountValue'] as num?)?.toDouble() ?? 0.0;
-      final maxDiscount = (match['maxDiscount'] as num?)?.toDouble();
-      double calc = 0;
-      if (discountType == 'Percent') {
-        calc = sub * (discountVal / 100);
-        if (maxDiscount != null && calc > maxDiscount) calc = maxDiscount;
-      } else {
-        calc = discountVal;
-      }
-      return calc.clamp(0, sub).toInt();
-    }
-
+  Future<void> _showCheckoutSheet(BuildContext context, List<ApiMenuCategory> categories) async {
+    if (_totalCartCount == 0) return;
+    Map<String, dynamic>? selectedVoucher;
+    String? voucherMessage;
     var isSubmitting = false;
+    var isApplyingVoucher = false;
+    const paymentMethod = 'Tiền mặt khi nhận hàng (COD)';
+    final voucherCodeController = TextEditingController();
 
-    showModalBottomSheet(
+    final createdOrder = await showModalBottomSheet<order_data.OrderModel>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          final appliedDiscount = calculateDiscount(appliedCouponCode, subtotal);
-          final finalTotal = (subtotal.toInt() - appliedDiscount + deliveryFee).clamp(0, 999999999);
+          final selectedOrderItems = _currentOrderItems(categories);
+          final currentSubtotal = selectedOrderItems.fold<int>(0, (sum, item) => sum + item.price * item.quantity);
+          final deliveryFee = _deliveryFee;
+          final discount = (selectedVoucher?['discountAmount'] as num?)?.round() ?? 0;
+          final total = currentSubtotal + deliveryFee - discount;
+
+          Future<void> applyVoucher(String rawCode) async {
+            final code = rawCode.trim().toUpperCase();
+            if (code.isEmpty) {
+              setSheetState(() => voucherMessage = 'Nhập mã voucher trước.');
+              return;
+            }
+            setSheetState(() {
+              isApplyingVoucher = true;
+              voucherMessage = null;
+            });
+            try {
+              final preview = await OrderApiService().previewDirectVoucher(
+                restaurantId: widget.restaurant.id,
+                couponCode: code,
+                items: selectedOrderItems,
+              );
+              if (!ctx.mounted) return;
+              setSheetState(() {
+                selectedVoucher = {
+                  ...preview,
+                  'code': preview['couponCode']?.toString() ?? code,
+                };
+                voucherCodeController.text = selectedVoucher!['code'].toString();
+                voucherMessage = 'Đã áp dụng ${selectedVoucher!['code']}.';
+                isApplyingVoucher = false;
+              });
+            } catch (error) {
+              if (!ctx.mounted) return;
+              setSheetState(() {
+                selectedVoucher = null;
+                voucherMessage = error.toString().replaceFirst('Exception: ', '');
+                isApplyingVoucher = false;
+              });
+            }
+          }
 
           return Padding(
             padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
               left: 20,
               right: 20,
-              top: 20,
+              top: 16,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Xác nhận đặt đơn hàng',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(10)),
-                    child: const Icon(Icons.storefront, color: Colors.orange),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Xác nhận đặt đơn hàng',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                   ),
-                  title: Text(widget.restaurant.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(widget.restaurant.address, maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-                const Divider(),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(10)),
-                    child: const Icon(Icons.location_on, color: Colors.green),
-                  ),
-                  title: const Text('Giao đến vị trí của bạn:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
-                  subtitle: Text(
-                    _deliveryAddress ?? widget.userAddress ?? 'Địa chỉ nhận hàng của bạn',
-                    style: const TextStyle(fontSize: 12, color: Colors.black87),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const Divider(),
-                const Text('Món đã chọn:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                const SizedBox(height: 6),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 140),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: selectedOrderItems.length,
-                    itemBuilder: (_, i) {
-                      final it = selectedOrderItems[i];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
-                        child: Row(
-                          children: [
-                            Text('${it.quantity}x ', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-                            Expanded(child: Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                            Text(order_data.money(it.price * it.quantity), style: const TextStyle(fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const Divider(),
-
-                // KHỐI CHỌN VÀ NHẬP VOUCHER
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.confirmation_num_outlined, color: Colors.deepOrange, size: 22),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Voucher giảm giá:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text(
-                              appliedCouponCode != null && appliedCouponCode!.isNotEmpty
-                                  ? (appliedDiscount > 0
-                                      ? 'Mã: $appliedCouponCode (Giảm ${order_data.money(appliedDiscount)})'
-                                      : 'Mã $appliedCouponCode chưa đủ điều kiện đơn')
-                                  : 'Chọn hoặc nhập mã giảm giá',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: (appliedDiscount > 0)
-                                    ? Colors.green.shade800
-                                    : (appliedCouponCode != null ? Colors.red.shade700 : Colors.grey.shade700),
-                                fontWeight: (appliedDiscount > 0) ? FontWeight.bold : FontWeight.normal,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: isSubmitting
-                            ? null
-                            : () async {
-                                final chosen = await _showVoucherPickerModal(ctx, subtotal);
-                                if (chosen != null) {
-                                  setSheetState(() {
-                                    appliedCouponCode = chosen.isEmpty ? null : chosen;
-                                    _selectedCouponCode = appliedCouponCode;
-                                  });
-                                }
-                              },
-                        child: Text(
-                          appliedCouponCode != null ? 'Đổi mã' : 'Chọn mã',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Tiền món:', style: TextStyle(color: Colors.grey)),
-                    Text(order_data.money(subtotal.toInt())),
-                  ],
-                ),
-                if (appliedDiscount > 0) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Giảm giá voucher ($appliedCouponCode):', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600)),
-                      Text('-${order_data.money(appliedDiscount)}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                    ],
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
                   ),
                 ],
-                const SizedBox(height: 4),
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Phí giao hàng:', style: TextStyle(color: Colors.grey)),
-                    Text('16.000 đ'),
-                  ],
+              ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(10)),
+                  child: const Icon(Icons.storefront, color: Colors.orange),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Tổng thanh toán:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text(
-                      order_data.money(finalTotal),
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.red),
-                    ),
-                  ],
+                title: Text(widget.restaurant.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(widget.restaurant.address, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(10)),
+                  child: const Icon(Icons.location_on, color: Colors.green),
                 ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: isSubmitting
-                      ? null
-                      : () async {
-                          final finalAddr = _deliveryAddress ?? widget.userAddress ?? 'Địa chỉ nhận hàng của bạn';
-                          setSheetState(() => isSubmitting = true);
-                          try {
-                            final newOrder = await order_data.OrderData().createOrder(
-                              restaurantId: widget.restaurant.id,
-                              restaurantName: widget.restaurant.name,
-                              restaurantAddress: widget.restaurant.address,
-                              items: selectedOrderItems,
-                              deliveryAddress: finalAddr,
-                              paymentMethod: paymentMethod,
-                              deliveryFee: deliveryFee,
-                              discount: appliedDiscount,
-                              couponCode: appliedCouponCode,
-                            );
-
-                            setState(() {
-                              _cartItems.clear();
-                              _selectedCouponCode = null;
-                            });
-                            _loadVouchers();
-
-                            if (ctx.mounted) Navigator.pop(ctx);
-
-                            if (context.mounted) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => OrderTrackingScreen(orderId: newOrder.id),
-                                ),
-                              );
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Đặt đơn #${newOrder.id} thành công! Quán đang nhận đơn.'),
-                                  backgroundColor: Colors.green,
-                                  duration: const Duration(seconds: 3),
-                                ),
-                              );
-                            }
-                          } catch (e) {
-                            setSheetState(() => isSubmitting = false);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Đặt hàng thất bại: $e'),
-                                  backgroundColor: Colors.red,
-                                  duration: const Duration(seconds: 4),
-                                ),
-                              );
-                            }
-                          }
-                        },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: isSubmitting
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                        )
-                      : const Text('Xác nhận Đặt hàng', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                title: const Text('Giao đến vị trí của bạn:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
+                subtitle: Text(
+                  _deliveryAddress ?? widget.userAddress ?? 'Địa chỉ nhận hàng của bạn',
+                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Future<String?> _showVoucherPickerModal(BuildContext sheetContext, double subtotal) async {
-    final textController = TextEditingController();
-    return await showModalBottomSheet<String>(
-      context: sheetContext,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-          left: 16,
-          right: 16,
-          top: 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Mã giảm giá khả dụng', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: textController,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                      hintText: 'Nhập mã voucher (VD: HELLOSOOPI)',
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () {
-                    final code = textController.text.trim().toUpperCase();
-                    if (code.isNotEmpty) {
-                      Navigator.pop(ctx, code);
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepOrange,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Áp dụng'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Divider(),
-            if (_vouchers.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(child: Text('Không có voucher nào khả dụng cho quán này.')),
-              )
-            else
+              ),
+              const Divider(),
+              const Text('Món đã chọn:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              const SizedBox(height: 6),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 250),
-                child: ListView.separated(
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: ListView.builder(
                   shrinkWrap: true,
-                  itemCount: _vouchers.length,
-                  separatorBuilder: (_, _) => const Divider(height: 8),
+                  itemCount: selectedOrderItems.length,
                   itemBuilder: (_, i) {
-                    final v = _vouchers[i];
-                    final code = v['code']?.toString() ?? '';
-                    final discountType = v['discountType']?.toString() ?? 'Fixed';
-                    final discountVal = (v['discountValue'] as num?)?.toDouble() ?? 0.0;
-                    final minOrder = (v['minOrderAmount'] as num?)?.toDouble() ?? 0.0;
-                    final isEligible = subtotal >= minOrder;
-
-                    final desc = discountType == 'Percent'
-                        ? 'Giảm ${discountVal.toInt()}%'
-                        : 'Giảm ${order_data.money(discountVal.toInt())}';
-
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(
-                        Icons.confirmation_num,
-                        color: isEligible ? Colors.deepOrange : Colors.grey,
-                      ),
-                      title: Text(
-                        '$code • $desc',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: isEligible ? Colors.black87 : Colors.grey,
-                        ),
-                      ),
-                      subtitle: Text(
-                        'Đơn tối thiểu: ${order_data.money(minOrder.toInt())}${!isEligible ? ' (Chưa đủ điều kiện)' : ''}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isEligible ? Colors.grey.shade700 : Colors.red.shade400,
-                        ),
-                      ),
-                      trailing: ElevatedButton(
-                        onPressed: isEligible ? () => Navigator.pop(ctx, code) : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepOrange,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                        child: const Text('Chọn', style: TextStyle(fontSize: 12)),
+                    final it = selectedOrderItems[i];
+                    final menuItem = categories.expand((c) => c.items).firstWhere((item) => item.id == it.id);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 5),
+                      child: Column(
+                        children: [
+                          Row(children: [
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              onPressed: isSubmitting || isApplyingVoucher ? null : () {
+                                _removeFromCart(menuItem);
+                                setSheetState(() {
+                                  selectedVoucher = null;
+                                  voucherMessage = 'Giỏ hàng đã đổi, hãy áp dụng lại voucher.';
+                                });
+                              },
+                              icon: const Icon(Icons.remove_circle_outline, color: Colors.orange),
+                            ),
+                            Text('${it.quantity}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              onPressed: isSubmitting || isApplyingVoucher ? null : () {
+                                _cartItems[menuItem.id] = (_cartItems[menuItem.id] ?? 0) + 1;
+                                setSheetState(() {
+                                  selectedVoucher = null;
+                                  voucherMessage = 'Giỏ hàng đã đổi, hãy áp dụng lại voucher.';
+                                });
+                              },
+                              icon: const Icon(Icons.add_circle_outline, color: Colors.orange),
+                            ),
+                            Expanded(child: Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                            Text(order_data.money(it.price * it.quantity), style: const TextStyle(fontWeight: FontWeight.w600)),
+                          ]),
+                          TextFormField(
+                            key: ValueKey('cart-note-${it.id}'),
+                            initialValue: _cartNotes[it.id] ?? '',
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              prefixIcon: Icon(Icons.edit_note, size: 19),
+                              hintText: 'Ghi chú món này (ít cay, không hành...)',
+                            ),
+                            onChanged: (value) {
+                              _cartNotes[it.id] = value;
+                              setSheetState(() {});
+                            },
+                          ),
+                        ],
                       ),
                     );
                   },
                 ),
               ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ''),
-              child: const Text('Không sử dụng voucher', style: TextStyle(color: Colors.grey)),
+              const Divider(),
+              const Text('Voucher', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              if (_fetchedVouchers.isNotEmpty) ...[
+                const Text(
+                  'Mã voucher khả dụng (Nhấn để chọn):',
+                  style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 38,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _fetchedVouchers.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, idx) {
+                      final v = _fetchedVouchers[idx];
+                      final code = v['code']?.toString() ?? '';
+                      final isSelected = selectedVoucher?['code'] == code;
+                      final discountType = v['discountType']?.toString() ?? 'Percent';
+                      final discountVal = (v['discountValue'] as num?)?.toInt() ?? 0;
+                      final minAmt = (v['minOrderAmount'] as num?)?.toInt() ?? 0;
+                      final discountText = discountType == 'Percent'
+                          ? 'Giảm $discountVal%'
+                          : 'Giảm ${order_data.money(discountVal)}';
+
+                      return FilterChip(
+                        selected: isSelected,
+                        avatar: Icon(Icons.local_offer, size: 14, color: isSelected ? Colors.white : Colors.orange),
+                        label: Text(
+                          '$code - $discountText (đơn từ ${order_data.money(minAmt)})',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                            color: isSelected ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        selectedColor: Colors.orange,
+                        backgroundColor: Colors.orange.shade50,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        onSelected: isSubmitting || isApplyingVoucher
+                            ? null
+                            : (selected) {
+                                if (selected) {
+                                  voucherCodeController.text = code;
+                                  applyVoucher(code);
+                                }
+                              },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: voucherCodeController,
+                      enabled: !isApplyingVoucher,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: 'Hoặc nhập mã voucher thủ công',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setSheetState(() {
+                        selectedVoucher = null;
+                        voucherMessage = null;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: isSubmitting || isApplyingVoucher
+                        ? null
+                        : () => applyVoucher(voucherCodeController.text),
+                    child: isApplyingVoucher
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Áp dụng'),
+                  ),
+                ],
+              ),
+                if (voucherMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(voucherMessage!, style: TextStyle(
+                      color: selectedVoucher == null ? Colors.deepOrange : Colors.green,
+                      fontSize: 12,
+                    )),
+                  ),
+                const SizedBox(height: 6),
+                if (selectedVoucher != null)
+                  Text(
+                    'Đã giảm ${order_data.money(discount)}',
+                    style: const TextStyle(color: Colors.green, fontSize: 12),
+                  ),
+              const Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Tiền món:', style: TextStyle(color: Colors.grey)),
+                  Text(order_data.money(currentSubtotal)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Phí giao hàng${_calculatedDistance == null ? '' : ' (${_calculatedDistance!.toStringAsFixed(1)} km)'}:', style: const TextStyle(color: Colors.grey)),
+                  Text(order_data.money(deliveryFee)),
+                ],
+              ),
+              if (discount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    const Text('Voucher:', style: TextStyle(color: Colors.green)),
+                    Text('-${order_data.money(discount)}', style: const TextStyle(color: Colors.green)),
+                  ]),
+                ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Tổng thanh toán:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text(
+                    order_data.money(total),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.red),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        final finalAddr = _deliveryAddress ?? widget.userAddress ?? 'Địa chỉ nhận hàng của bạn';
+                        setSheetState(() => isSubmitting = true);
+                        try {
+                          final newOrder = await order_data.OrderData().createOrder(
+                            restaurantId: widget.restaurant.id,
+                            restaurantName: widget.restaurant.name,
+                            restaurantAddress: widget.restaurant.address,
+                            items: selectedOrderItems,
+                            deliveryAddress: finalAddr,
+                            paymentMethod: paymentMethod,
+                            deliveryFee: deliveryFee,
+                            discount: discount,
+                            couponCode: selectedVoucher?['code']?.toString(),
+                            userLat: _deliveryLat ?? widget.userLat,
+                            userLng: _deliveryLng ?? widget.userLng,
+                            restaurantLat: widget.restaurant.latitude,
+                            restaurantLng: widget.restaurant.longitude,
+                          );
+
+                          if (ctx.mounted) {
+                            Navigator.pop(ctx, newOrder);
+                          }
+                        } catch (e) {
+                          setSheetState(() => isSubmitting = false);
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(
+                                content: Text('❌ Đặt hàng thất bại: $e'),
+                                backgroundColor: Colors.red,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: isSubmitting
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text('Xác nhận Đặt hàng', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ],
+              ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
+
+    if (createdOrder != null && context.mounted) {
+      setState(() {
+        _cartItems.clear();
+        _cartNotes.clear();
+      });
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OrderTrackingScreen(orderId: createdOrder.id),
+        ),
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🎉 Đặt đơn #${createdOrder.id} thành công! Quán đang nhận đơn.'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+    voucherCodeController.dispose();
   }
 }

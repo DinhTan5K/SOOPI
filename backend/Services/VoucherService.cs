@@ -10,19 +10,30 @@ public sealed class VoucherService(SoopiDbContext db)
 {
     public static string Normalize(string code) => code.Trim().ToUpperInvariant();
 
+    public static DateTime ToUtc(DateTime dt)
+    {
+        if (dt.Kind == DateTimeKind.Utc) return dt;
+        if (dt.Kind == DateTimeKind.Local) return dt.ToUniversalTime();
+        return DateTime.SpecifyKind(dt, DateTimeKind.Local).ToUniversalTime();
+    }
+
     public async Task<(Coupon Coupon, decimal Eligible, decimal Discount)> Evaluate(
         string code, Guid restaurantId, IReadOnlyCollection<VoucherLine> lines, CancellationToken ct)
     {
         var normalized = Normalize(code);
         var coupon = await db.Coupons.SingleOrDefaultAsync(c => c.Code.ToUpper() == normalized, ct)
-            ?? throw new InvalidOperationException("Voucher không tồn tại.");
+            ?? throw new InvalidOperationException("Mã voucher không tồn tại.");
         var now = DateTime.UtcNow;
-        if (!coupon.IsActive
-            || (coupon.StartsAt.HasValue && coupon.StartsAt.Value.ToUniversalTime() > now)
-            || (coupon.EndsAt.HasValue && coupon.EndsAt.Value.ToUniversalTime() < now)
-            || (coupon.UsageLimit.HasValue && coupon.UsedCount >= coupon.UsageLimit)
-            || (coupon.RestaurantId.HasValue && coupon.RestaurantId != restaurantId))
-            throw new InvalidOperationException("Voucher không còn hiệu lực hoặc không áp dụng cho quán này.");
+        if (!coupon.IsActive)
+            throw new InvalidOperationException("Voucher này đang tạm ngưng hoạt động.");
+        if (coupon.RestaurantId.HasValue && coupon.RestaurantId != restaurantId)
+            throw new InvalidOperationException("Voucher này không thuộc về quán ăn đang chọn.");
+        if (coupon.StartsAt.HasValue && ToUtc(coupon.StartsAt.Value) > now.AddMinutes(5))
+            throw new InvalidOperationException("Voucher chưa đến thời hạn hiệu lực.");
+        if (coupon.EndsAt.HasValue && ToUtc(coupon.EndsAt.Value) < now)
+            throw new InvalidOperationException("Voucher này đã hết hạn sử dụng.");
+        if (coupon.UsageLimit.HasValue && coupon.UsedCount >= coupon.UsageLimit)
+            throw new InvalidOperationException("Voucher này đã hết lượt sử dụng.");
         if (coupon.MenuItemId.HasValue && !await db.MenuItems.AnyAsync(m => m.Id == coupon.MenuItemId
             && m.Category!.RestaurantId == restaurantId, ct))
             throw new InvalidOperationException("Món áp dụng voucher không còn tồn tại.");
@@ -48,9 +59,10 @@ public sealed class VoucherService(SoopiDbContext db)
     public static string Status(Coupon coupon)
     {
         if (!coupon.IsActive) return "Inactive";
-        if (coupon.EndsAt.HasValue && coupon.EndsAt.Value.ToUniversalTime() < DateTime.UtcNow) return "Expired";
+        var now = DateTime.UtcNow;
+        if (coupon.EndsAt.HasValue && ToUtc(coupon.EndsAt.Value) < now) return "Expired";
         if (coupon.UsageLimit.HasValue && coupon.UsedCount >= coupon.UsageLimit) return "Exhausted";
-        return (coupon.StartsAt.HasValue && coupon.StartsAt.Value.ToUniversalTime() > DateTime.UtcNow) ? "Scheduled" : "Active";
+        return (coupon.StartsAt.HasValue && ToUtc(coupon.StartsAt.Value) > now.AddMinutes(5)) ? "Scheduled" : "Active";
     }
 
     public static object View(Coupon c) => new {
