@@ -16,6 +16,7 @@ class _AdminRestaurantsTabState extends State<AdminRestaurantsTab> {
   String? _error;
   List<dynamic> _restaurants = [];
   int _page = 1;
+  int _total = 0;
   static const int _pageSize = 20;
 
   @override
@@ -55,6 +56,7 @@ class _AdminRestaurantsTabState extends State<AdminRestaurantsTab> {
       if (!mounted) return;
       setState(() {
         _restaurants = res['items'] as List<dynamic>? ?? [];
+        _total = (res['total'] as num?)?.toInt() ?? _restaurants.length;
         _loading = false;
       });
     } catch (e) {
@@ -241,16 +243,22 @@ class _AdminRestaurantsTabState extends State<AdminRestaurantsTab> {
   }
 
   Future<void> _showDetail(String id) async {
+    BuildContext? dialogCtx;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: Colors.deepOrange)),
+      builder: (ctx) {
+        dialogCtx = ctx;
+        return const Center(child: CircularProgressIndicator(color: Colors.deepOrange));
+      },
     );
 
     try {
       final detail = await widget.api.getRestaurantDetail(id);
+      if (dialogCtx != null && dialogCtx!.mounted) {
+        Navigator.pop(dialogCtx!);
+      }
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
 
       final rest = detail['restaurant'] as Map<String, dynamic>? ?? {};
       final owner = detail['owner'] as Map<String, dynamic>? ?? {};
@@ -382,8 +390,10 @@ class _AdminRestaurantsTabState extends State<AdminRestaurantsTab> {
         ),
       );
     } catch (e) {
+      if (dialogCtx != null && dialogCtx!.mounted) {
+        Navigator.pop(dialogCtx!);
+      }
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Lỗi lấy chi tiết quán: $e'), backgroundColor: Colors.red),
       );
@@ -419,7 +429,7 @@ class _AdminRestaurantsTabState extends State<AdminRestaurantsTab> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
       child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
     );
   }
@@ -588,6 +598,44 @@ class _AdminRestaurantsTabState extends State<AdminRestaurantsTab> {
                           ),
                         ),
         ),
+        if (_total > _pageSize)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Tổng: $_total quán ăn', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: _page > 1
+                          ? () {
+                              setState(() => _page--);
+                              _fetch();
+                            }
+                          : null,
+                    ),
+                    Text('Trang $_page / ${((_total - 1) ~/ _pageSize) + 1}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: _page < ((_total - 1) ~/ _pageSize) + 1
+                          ? () {
+                              setState(() => _page++);
+                              _fetch();
+                            }
+                          : null,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

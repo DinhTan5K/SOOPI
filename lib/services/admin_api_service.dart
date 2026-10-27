@@ -1,12 +1,33 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'profile_api_service.dart';
 
+/// Custom exception for Admin API errors to allow the UI to
+/// differentiate between network errors, auth errors, and server errors.
+class AdminException implements Exception {
+  final String message;
+  final int? statusCode;
+
+  AdminException(this.message, [this.statusCode]);
+
+  @override
+  String toString() => message;
+}
+
 class AdminApiService {
-  AdminApiService({http.Client? client, Future<String?> Function()? token})
-      : _client = client ?? http.Client(),
-        _token = token ?? (() async => FirebaseAuth.instance.currentUser?.getIdToken());
+  // Singleton implementation
+  static final AdminApiService _instance = AdminApiService._internal();
+  factory AdminApiService() => _instance;
+
+  AdminApiService._internal()
+      : _client = http.Client(),
+        _token = _defaultToken;
+
+  static Future<String?> _defaultToken() async =>
+      await FirebaseAuth.instance.currentUser?.getIdToken();
 
   final http.Client _client;
   final Future<String?> Function() _token;
@@ -18,7 +39,7 @@ class AdminApiService {
   ]) async {
     final token = await _token();
     if (token == null) {
-      throw Exception('Vui lòng đăng nhập tài khoản Quản trị viên (Admin).');
+      throw AdminException('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 401);
     }
 
     final uri = Uri.parse('${ProfileApiService().baseUrl}/admin/$path');
@@ -34,25 +55,46 @@ class AdminApiService {
       request.body = jsonEncode(body);
     }
 
-    final response = await http.Response.fromStream(
-      await _client.send(request).timeout(const Duration(seconds: 15)),
-    );
-
-    return _decode(response);
+    try {
+      final streamedResponse = await _client.send(request).timeout(const Duration(seconds: 15));
+      final response = await http.Response.fromStream(streamedResponse);
+      return _decode(response);
+    } on TimeoutException {
+      throw AdminException('Quá thời gian kết nối (15 giây). Vui lòng thử lại sau.');
+    } on SocketException catch (e) {
+      throw AdminException('Không thể kết nối đến máy chủ: ${e.message}');
+    } on http.ClientException catch (e) {
+      throw AdminException('Lỗi kết nối mạng: ${e.message}');
+    } on FormatException catch (e) {
+      throw AdminException('Lỗi định dạng dữ liệu: ${e.message}');
+    } catch (e) {
+      if (e is AdminException) rethrow;
+      throw AdminException('Đã xảy ra lỗi không xác định: $e');
+    }
   }
 
   dynamic _decode(http.Response response) {
     if (response.statusCode == 204) return null;
 
-    final data = response.body.isEmpty
-        ? null
-        : jsonDecode(utf8.decode(response.bodyBytes));
+    dynamic data;
+    if (response.body.isNotEmpty) {
+      try {
+        data = jsonDecode(utf8.decode(response.bodyBytes));
+      } catch (_) {
+        data = response.body;
+      }
+    }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final msg = data is Map
-          ? (data['error'] ?? data['title'] ?? data['detail'] ?? 'Lỗi máy chủ (${response.statusCode})')
-          : 'Yêu cầu thất bại (${response.statusCode}).';
-      throw Exception(msg);
+      String msg;
+      if (data is Map) {
+        msg = (data['error'] ?? data['title'] ?? data['detail'] ?? data['message'] ?? 'Lỗi máy chủ (${response.statusCode})').toString();
+      } else if (data is String && data.trim().isNotEmpty) {
+        msg = data.trim();
+      } else {
+        msg = 'Yêu cầu thất bại (${response.statusCode}).';
+      }
+      throw AdminException(msg, response.statusCode);
     }
     return data;
   }

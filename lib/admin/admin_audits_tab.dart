@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../services/admin_api_service.dart';
 
 class AdminAuditsTab extends StatefulWidget {
@@ -124,6 +125,12 @@ class _AdminAuditsTabState extends State<AdminAuditsTab> {
                               if (action.contains('Rejected') || action.contains('Locked')) badgeColor = Colors.red;
                               if (action.contains('Unlocked')) badgeColor = Colors.teal;
 
+                              String formattedTime = time;
+                              final parsedDate = DateTime.tryParse(time);
+                              if (parsedDate != null) {
+                                formattedTime = DateFormat('dd/MM/yyyy HH:mm').format(parsedDate.toLocal());
+                              }
+
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 10),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -139,7 +146,7 @@ class _AdminAuditsTabState extends State<AdminAuditsTab> {
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                             decoration: BoxDecoration(
-                                              color: badgeColor.withOpacity(0.12),
+                                              color: badgeColor.withValues(alpha: 0.12),
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                             child: Text(
@@ -160,7 +167,7 @@ class _AdminAuditsTabState extends State<AdminAuditsTab> {
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text('Mục tiêu: ${a['targetId'] ?? ''}', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-                                          Text(time, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                                          Text(formattedTime, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
                                         ],
                                       ),
                                     ],

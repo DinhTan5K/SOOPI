@@ -16,6 +16,7 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
   String? _error;
   List<dynamic> _users = [];
   int _page = 1;
+  int _total = 0;
   static const int _pageSize = 20;
 
   @override
@@ -56,12 +57,14 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
       if (!mounted) return;
       setState(() {
         _users = res['items'] as List<dynamic>? ?? [];
+        _total = (res['total'] as num?)?.toInt() ?? _users.length;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
+      final errorMsg = e is AdminException ? e.message : e.toString();
       setState(() {
-        _error = e.toString();
+        _error = errorMsg;
         _loading = false;
       });
     }
@@ -93,15 +96,21 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
               const SizedBox(height: 16),
               const Text('Chọn vai trò mới:'),
               const SizedBox(height: 8),
-              ...roles.map(
-                (r) => RadioListTile<String>(
-                  title: Text(_roleLabel(r)),
-                  value: r,
-                  groupValue: selected,
-                  dense: true,
-                  onChanged: (val) {
-                    setDialogState(() => selected = val);
-                  },
+              RadioGroup<String>(
+                groupValue: selected,
+                onChanged: (val) {
+                  setDialogState(() => selected = val);
+                },
+                child: Column(
+                  children: roles
+                      .map(
+                        (r) => RadioListTile<String>(
+                          title: Text(_roleLabel(r)),
+                          value: r,
+                          dense: true,
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
             ],
@@ -209,16 +218,22 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
   }
 
   Future<void> _showDetail(String id) async {
+    BuildContext? dialogCtx;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const Center(child: CircularProgressIndicator(color: Colors.deepOrange)),
+      builder: (ctx) {
+        dialogCtx = ctx;
+        return const Center(child: CircularProgressIndicator(color: Colors.deepOrange));
+      },
     );
 
     try {
       final detail = await widget.api.getUserDetail(id);
+      if (dialogCtx != null && dialogCtx!.mounted) {
+        Navigator.pop(dialogCtx!);
+      }
       if (!mounted) return;
-      Navigator.pop(context);
 
       final user = detail['user'] as Map<String, dynamic>? ?? {};
       final restaurants = detail['restaurants'] as List<dynamic>? ?? [];
@@ -294,8 +309,10 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
         ),
       );
     } catch (e) {
+      if (dialogCtx != null && dialogCtx!.mounted) {
+        Navigator.pop(dialogCtx!);
+      }
       if (!mounted) return;
-      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
     }
   }
@@ -335,7 +352,7 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
       child: Text(role, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
     );
   }
@@ -501,6 +518,44 @@ class _AdminUsersTabState extends State<AdminUsersTab> {
                           ),
                         ),
         ),
+        if (_total > _pageSize)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Tổng: $_total người dùng', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: _page > 1
+                          ? () {
+                              setState(() => _page--);
+                              _fetch();
+                            }
+                          : null,
+                    ),
+                    Text('Trang $_page / ${((_total - 1) ~/ _pageSize) + 1}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: _page < ((_total - 1) ~/ _pageSize) + 1
+                          ? () {
+                              setState(() => _page++);
+                              _fetch();
+                            }
+                          : null,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
