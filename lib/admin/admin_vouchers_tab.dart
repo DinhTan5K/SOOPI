@@ -15,6 +15,7 @@ class _AdminVouchersTabState extends State<AdminVouchersTab> {
   bool _loading = true;
   String? _error;
   List<dynamic> _vouchers = [];
+  final Set<String> _updatingIds = {};
 
   @override
   void initState() {
@@ -45,14 +46,19 @@ class _AdminVouchersTabState extends State<AdminVouchersTab> {
   }
 
   Future<void> _toggleStatus(String id, bool currentStatus) async {
+    if (_updatingIds.contains(id)) return;
+    setState(() => _updatingIds.add(id));
+
     try {
       await widget.api.toggleGlobalVoucherStatus(id, !currentStatus);
-      _fetch();
+      await _fetch();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Lỗi cập nhật: $e'), backgroundColor: Colors.red),
       );
+    } finally {
+      if (mounted) setState(() => _updatingIds.remove(id));
     }
   }
 
@@ -64,10 +70,11 @@ class _AdminVouchersTabState extends State<AdminVouchersTab> {
     final usageLimitCtrl = TextEditingController(text: '100');
     String discountType = 'Percent'; // 'Percent' or 'Fixed'
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
+    try {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('Tạo Voucher Toàn Sàn Mới'),
           content: SingleChildScrollView(
             child: Column(
@@ -159,35 +166,42 @@ class _AdminVouchersTabState extends State<AdminVouchersTab> {
       ),
     );
 
-    if (result != true) return;
+      if (result != true) return;
 
-    try {
-      final val = double.tryParse(valueCtrl.text.trim()) ?? 0;
-      final minOrder = double.tryParse(minOrderCtrl.text.trim()) ?? 0;
-      final maxDisc = maxDiscountCtrl.text.trim().isNotEmpty ? double.tryParse(maxDiscountCtrl.text.trim()) : null;
-      final limit = usageLimitCtrl.text.trim().isNotEmpty ? int.tryParse(usageLimitCtrl.text.trim()) : null;
+      try {
+        final val = double.tryParse(valueCtrl.text.trim()) ?? 0;
+        final minOrder = double.tryParse(minOrderCtrl.text.trim()) ?? 0;
+        final maxDisc = maxDiscountCtrl.text.trim().isNotEmpty ? double.tryParse(maxDiscountCtrl.text.trim()) : null;
+        final limit = usageLimitCtrl.text.trim().isNotEmpty ? int.tryParse(usageLimitCtrl.text.trim()) : null;
 
-      final data = {
-        'code': codeCtrl.text.trim().toUpperCase(),
-        'discountType': discountType,
-        'discountValue': val,
-        'minOrderAmount': minOrder,
-        if (maxDisc != null) 'maxDiscount': maxDisc,
-        if (limit != null) 'usageLimit': limit,
-        'isActive': true,
-      };
+        final data = <String, dynamic>{
+          'code': codeCtrl.text.trim().toUpperCase(),
+          'discountType': discountType,
+          'discountValue': val,
+          'minOrderAmount': minOrder,
+          'isActive': true,
+        };
+        if (maxDisc != null) data['maxDiscount'] = maxDisc;
+        if (limit != null) data['usageLimit'] = limit;
 
-      await widget.api.createGlobalVoucher(data);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tạo voucher toàn sàn thành công!'), backgroundColor: Colors.green),
-      );
-      _fetch();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi tạo voucher: $e'), backgroundColor: Colors.red),
-      );
+        await widget.api.createGlobalVoucher(data);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tạo voucher toàn sàn thành công!'), backgroundColor: Colors.green),
+        );
+        _fetch();
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi tạo voucher: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      codeCtrl.dispose();
+      valueCtrl.dispose();
+      minOrderCtrl.dispose();
+      maxDiscountCtrl.dispose();
+      usageLimitCtrl.dispose();
     }
   }
 
@@ -311,7 +325,7 @@ class _AdminVouchersTabState extends State<AdminVouchersTab> {
                                   ),
                                   Switch(
                                     value: isActive,
-                                    activeColor: Colors.deepOrange,
+                                    activeThumbColor: Colors.deepOrange,
                                     onChanged: (val) => _toggleStatus(id, isActive),
                                   ),
                                 ],

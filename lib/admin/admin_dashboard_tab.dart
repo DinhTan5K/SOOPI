@@ -120,7 +120,7 @@ class _AdminDashboardTabState extends State<AdminDashboardTab> {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.12),
+                  color: Colors.black.withValues(alpha: 0.12),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -131,7 +131,7 @@ class _AdminDashboardTabState extends State<AdminDashboardTab> {
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.deepOrange.withOpacity(0.2),
+                    color: Colors.deepOrange.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -373,7 +373,7 @@ class _AdminDashboardTabState extends State<AdminDashboardTab> {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),

@@ -83,7 +83,11 @@ public sealed class AdminManagementController(
         var query = db.Users.AsNoTracking();
         if (role is not null) query = query.Where(u => u.Role == role);
         if (locked.HasValue) query = query.Where(u => u.IsLocked == locked.Value);
-        if (!string.IsNullOrWhiteSpace(q)) query = query.Where(u => u.Email.Contains(q) || u.FullName.Contains(q));
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var search = q.Trim();
+            query = query.Where(u => u.Email.Contains(search) || (u.FullName != null && u.FullName.Contains(search)) || (u.Phone != null && u.Phone.Contains(search)));
+        }
         var total = await query.CountAsync(ct);
         var rows = await query.OrderBy(u => u.Email).ThenBy(u => u.Id).Skip((page - 1) * pageSize).Take(pageSize)
             .Select(u => new { u.Id, u.Email, u.FullName, u.Phone, u.Role, u.IsLocked }).ToListAsync(ct);
@@ -251,7 +255,11 @@ public sealed class AdminManagementController(
             var search = q.Trim();
             query = query.Where(o =>
                 o.OrderCode.Contains(search) ||
-                (o.Customer != null && (o.Customer.FullName.Contains(search) || o.Customer.Phone!.Contains(search))) ||
+                (o.Customer != null && (
+                    (o.Customer.FullName != null && o.Customer.FullName.Contains(search)) ||
+                    (o.Customer.Phone != null && o.Customer.Phone.Contains(search)) ||
+                    (o.Customer.Email != null && o.Customer.Email.Contains(search))
+                )) ||
                 (o.Restaurant != null && o.Restaurant.Name.Contains(search)));
         }
 
