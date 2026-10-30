@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../auth_screen.dart';
+import '../services/auth_service.dart';
+import '../services/profile_api_service.dart';
 import 'shipper_home_screen.dart';
 import 'shipper_active_trip_screen.dart';
 import 'shipper_earnings_screen.dart';
@@ -42,10 +45,23 @@ class _ShipperMainScreenState extends State<ShipperMainScreen> {
         ),
         backgroundColor: Colors.white,
         elevation: 0.5,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: false,
+        actions: [
+          IconButton(
+            tooltip: 'Đăng xuất tài khoản',
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            onPressed: () async {
+              ProfileApiService().clearCache();
+              await AuthService().signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const AuthScreen()),
+                  (route) => false,
+                );
+              }
+            },
+          ),
+        ],
       ),
       body: IndexedStack(
         index: _currentTab,

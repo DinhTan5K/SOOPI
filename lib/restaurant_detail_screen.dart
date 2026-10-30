@@ -6,6 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'services/profile_api_service.dart';
 import 'services/api_service.dart';
+import 'services/geocoding_service.dart';
+import 'services/address_suggestion_service.dart';
+import 'models/user_address.dart';
+import 'package:geolocator/geolocator.dart';
 import 'order/order_data.dart' as order_data;
 import 'order/order_tracking_screen.dart';
 import 'services/order_api_service.dart';
@@ -65,9 +69,59 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
     }
   }
 
-  Future<void> _loadSavedAddressFallback() async {
-    if (_deliveryAddress != null && _deliveryLat != null && _deliveryLat != 0) return;
+  Future<void> _persistSelectedAddress({
+    required String address,
+    required String label,
+    required double latitude,
+    required double longitude,
+  }) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      await prefs.setString(
+        'soopi.delivery_address.$uid',
+        jsonEncode({
+          'address': address,
+          'type': label,
+          'latitude': latitude,
+          'longitude': longitude,
+        }),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _loadSavedAddressFallback() async {
+    try {
+      // Nếu địa chỉ truyền vào từ Home là chuỗi GPS thô nhưng có tọa độ, dịch ngược ngay sang địa chỉ thật
+      if (GeocodingService.isRawCoordinateAddress(_deliveryAddress) &&
+          _deliveryLat != null &&
+          _deliveryLng != null &&
+          _deliveryLat != 0 &&
+          _deliveryLng != 0) {
+        final resolved = await GeocodingService.reverseGeocode(
+          _deliveryLat!,
+          _deliveryLng!,
+        );
+        if (mounted) {
+          setState(() {
+            _deliveryAddress = resolved;
+          });
+        }
+        await _persistSelectedAddress(
+          address: resolved,
+          label: 'Vị trí hiện tại',
+          latitude: _deliveryLat!,
+          longitude: _deliveryLng!,
+        );
+        return;
+      }
+
+      if (!GeocodingService.isRawCoordinateAddress(_deliveryAddress) &&
+          _deliveryLat != null &&
+          _deliveryLat != 0) {
+        return;
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
       String? raw = prefs.getString('soopi.delivery_address.$uid');
@@ -86,16 +140,388 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
         final map = jsonDecode(raw) as Map<String, dynamic>;
         final lat = (map['latitude'] as num?)?.toDouble();
         final lng = (map['longitude'] as num?)?.toDouble();
-        final addr = map['address']?.toString();
+        var addr = map['address']?.toString();
+
+        if (GeocodingService.isRawCoordinateAddress(addr) &&
+            lat != null &&
+            lng != null &&
+            lat != 0 &&
+            lng != 0) {
+          addr = await GeocodingService.reverseGeocode(lat, lng);
+          await _persistSelectedAddress(
+            address: addr,
+            label: map['type']?.toString() ?? 'Vị trí hiện tại',
+            latitude: lat,
+            longitude: lng,
+          );
+        }
+
         if (mounted) {
           setState(() {
-            _deliveryAddress ??= addr;
+            if (!GeocodingService.isRawCoordinateAddress(addr)) {
+              _deliveryAddress = addr;
+            }
             _deliveryLat ??= lat;
             _deliveryLng ??= lng;
           });
         }
       }
+
+      // Nếu vẫn chưa có địa chỉ rõ ràng, lấy địa chỉ mặc định trong Sổ địa chỉ
+      if (GeocodingService.isRawCoordinateAddress(_deliveryAddress)) {
+        final profileAddresses = await ProfileApiService().getAddresses();
+        if (profileAddresses.isNotEmpty) {
+          final def = profileAddresses.firstWhere(
+            (a) => a.isDefault,
+            orElse: () => profileAddresses.first,
+          );
+          if (def.fullAddress.trim().isNotEmpty) {
+            final coords = await GeocodingService.getCoordinatesFromAddress(
+              def.fullAddress.trim(),
+            );
+            final lat = coords?.latitude ?? _deliveryLat ?? 10.77689;
+            final lng = coords?.longitude ?? _deliveryLng ?? 106.70089;
+            if (mounted) {
+              setState(() {
+                _deliveryAddress = def.fullAddress.trim();
+                _deliveryLat = lat;
+                _deliveryLng = lng;
+              });
+            }
+            await _persistSelectedAddress(
+              address: def.fullAddress.trim(),
+              label: def.label,
+              latitude: lat,
+              longitude: lng,
+            );
+          }
+        }
+      }
     } catch (_) {}
+  }
+
+  Future<bool> _showChangeDeliveryAddressSheet(BuildContext parentContext) async {
+    List<UserAddress> profileAddresses = [];
+    try {
+      profileAddresses = await ProfileApiService().getAddresses();
+    } catch (_) {}
+
+    if (!mounted) return false;
+
+    final searchController = TextEditingController();
+    List<AddressSuggestion> suggestions = [];
+    bool isSearching = false;
+    bool isLocatingGps = false;
+    int searchVersion = 0;
+
+    final selectedResult = await showModalBottomSheet<Map<String, dynamic>>(
+      context: parentContext,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setModalState) {
+          Future<void> onSearchChanged(String val) async {
+            final ver = ++searchVersion;
+            if (val.trim().length < 3) {
+              setModalState(() {
+                suggestions = [];
+                isSearching = false;
+              });
+              return;
+            }
+            setModalState(() => isSearching = true);
+            await Future<void>.delayed(const Duration(milliseconds: 500));
+            if (ver != searchVersion || !sheetCtx.mounted) return;
+            try {
+              final res = await AddressSuggestionService.search(val.trim());
+              if (ver == searchVersion && sheetCtx.mounted) {
+                setModalState(() {
+                  suggestions = res;
+                  isSearching = false;
+                });
+              }
+            } catch (_) {
+              if (ver == searchVersion && sheetCtx.mounted) {
+                setModalState(() {
+                  suggestions = [];
+                  isSearching = false;
+                });
+              }
+            }
+          }
+
+          Future<void> useCurrentGps() async {
+            if (isLocatingGps) return;
+            setModalState(() => isLocatingGps = true);
+            try {
+              var perm = await Geolocator.checkPermission();
+              if (perm == LocationPermission.denied) {
+                perm = await Geolocator.requestPermission();
+              }
+              if (perm == LocationPermission.denied ||
+                  perm == LocationPermission.deniedForever) {
+                throw Exception('Chưa cấp quyền truy cập vị trí GPS.');
+              }
+              final pos = await Geolocator.getCurrentPosition(
+                locationSettings: const LocationSettings(
+                  accuracy: LocationAccuracy.high,
+                  timeLimit: Duration(seconds: 15),
+                ),
+              );
+
+              String resolvedAddr = '';
+              String resolvedLabel = 'Vị trí hiện tại';
+              final near = await GeocodingService.findNearestSavedAddress(
+                pos.latitude,
+                pos.longitude,
+                profileAddresses,
+                maxDistanceMeters: 120,
+              );
+              if (near != null) {
+                resolvedAddr = near.address.fullAddress.trim();
+                resolvedLabel = near.address.label;
+              } else {
+                resolvedAddr = await GeocodingService.reverseGeocode(
+                  pos.latitude,
+                  pos.longitude,
+                );
+              }
+
+              if (sheetCtx.mounted) {
+                Navigator.pop(sheetCtx, {
+                  'address': resolvedAddr,
+                  'label': resolvedLabel,
+                  'latitude': pos.latitude,
+                  'longitude': pos.longitude,
+                });
+              }
+            } catch (e) {
+              if (sheetCtx.mounted) {
+                setModalState(() => isLocatingGps = false);
+                ScaffoldMessenger.of(sheetCtx).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Không lấy được GPS: ${e.toString().replaceFirst('Exception: ', '')}',
+                    ),
+                  ),
+                );
+              }
+            }
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(sheetCtx).viewInsets.bottom + 20,
+              left: 20,
+              right: 20,
+              top: 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Đổi địa chỉ giao hàng',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetCtx),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 46),
+                      side: const BorderSide(color: Colors.orange),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: isLocatingGps ? null : useCurrentGps,
+                    icon: isLocatingGps
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.my_location, color: Colors.orange),
+                    label: Text(
+                      isLocatingGps
+                          ? 'Đang xác định địa chỉ cụ thể...'
+                          : 'Dùng vị trí hiện tại (Tự động tìm số nhà/tên đường)',
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: searchController,
+                    onChanged: onSearchChanged,
+                    decoration: InputDecoration(
+                      hintText: 'Nhập số nhà, tên đường, phường/quận...',
+                      prefixIcon: const Icon(Icons.search, color: Colors.orange),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.check_circle, color: Colors.green),
+                        tooltip: 'Dùng địa chỉ vừa nhập',
+                        onPressed: () async {
+                          final q = searchController.text.trim();
+                          if (q.isEmpty) return;
+                          final coords =
+                              await GeocodingService.getCoordinatesFromAddress(q);
+                          if (sheetCtx.mounted) {
+                            Navigator.pop(sheetCtx, {
+                              'address': q,
+                              'label': 'Địa chỉ tùy chỉnh',
+                              'latitude':
+                                  coords?.latitude ?? _deliveryLat ?? 10.77689,
+                              'longitude':
+                                  coords?.longitude ?? _deliveryLng ?? 106.70089,
+                            });
+                          }
+                        },
+                      ),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  if (isSearching)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    ),
+                  if (suggestions.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: suggestions.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final s = suggestions[i];
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(
+                              Icons.place_outlined,
+                              color: Colors.orange,
+                            ),
+                            title: Text(
+                              s.displayName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                            onTap: () => Navigator.pop(sheetCtx, {
+                              'address': s.displayName,
+                              'label': 'Địa chỉ giao hàng',
+                              'latitude': s.latitude,
+                              'longitude': s.longitude,
+                            }),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                  if (profileAddresses.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Địa chỉ đã lưu trong hồ sơ:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: profileAddresses.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final addr = profileAddresses[i];
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              addr.label == 'Văn phòng'
+                                  ? Icons.business
+                                  : (addr.label == 'Nhà riêng'
+                                      ? Icons.home
+                                      : Icons.location_on),
+                              color: Colors.orange,
+                            ),
+                            title: Text(
+                              addr.label,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(
+                              addr.fullAddress,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () async {
+                              final coords = await GeocodingService
+                                  .getCoordinatesFromAddress(addr.fullAddress);
+                              if (sheetCtx.mounted) {
+                                Navigator.pop(sheetCtx, {
+                                  'address': addr.fullAddress,
+                                  'label': addr.label,
+                                  'latitude': coords?.latitude ??
+                                      _deliveryLat ??
+                                      10.77689,
+                                  'longitude': coords?.longitude ??
+                                      _deliveryLng ??
+                                      106.70089,
+                                });
+                              }
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    if (selectedResult != null && mounted) {
+      final newAddr = selectedResult['address']?.toString() ?? '';
+      final newLabel = selectedResult['label']?.toString() ?? 'Địa chỉ giao hàng';
+      final newLat = (selectedResult['latitude'] as num?)?.toDouble();
+      final newLng = (selectedResult['longitude'] as num?)?.toDouble();
+      if (newAddr.isNotEmpty) {
+        setState(() {
+          _deliveryAddress = newAddr;
+          if (newLat != null && newLat != 0) _deliveryLat = newLat;
+          if (newLng != null && newLng != 0) _deliveryLng = newLng;
+        });
+        if (newLat != null && newLng != null) {
+          await _persistSelectedAddress(
+            address: newAddr,
+            label: newLabel,
+            latitude: newLat,
+            longitude: newLng,
+          );
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   @override
@@ -1171,6 +1597,15 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
               const Divider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
+                onTap: isSubmitting
+                    ? null
+                    : () async {
+                        final changed =
+                            await _showChangeDeliveryAddressSheet(ctx);
+                        if (changed && ctx.mounted) {
+                          setSheetState(() {});
+                        }
+                      },
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(10)),
@@ -1178,10 +1613,44 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
                 ),
                 title: const Text('Giao đến vị trí của bạn:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green)),
                 subtitle: Text(
-                  _deliveryAddress ?? widget.userAddress ?? 'Địa chỉ nhận hàng của bạn',
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                  !GeocodingService.isRawCoordinateAddress(_deliveryAddress)
+                      ? _deliveryAddress!
+                      : (!GeocodingService.isRawCoordinateAddress(widget.userAddress)
+                          ? widget.userAddress!
+                          : 'Nhấn vào đây để chọn địa chỉ nhận hàng cụ thể'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: !GeocodingService.isRawCoordinateAddress(
+                                _deliveryAddress ?? widget.userAddress)
+                        ? Colors.black87
+                        : Colors.deepOrange,
+                    fontWeight: !GeocodingService.isRawCoordinateAddress(
+                                _deliveryAddress ?? widget.userAddress)
+                        ? FontWeight.normal
+                        : FontWeight.w600,
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
+                ),
+                trailing: TextButton.icon(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final changed =
+                              await _showChangeDeliveryAddressSheet(ctx);
+                          if (changed && ctx.mounted) {
+                            setSheetState(() {});
+                          }
+                        },
+                  icon: const Icon(Icons.edit_location_alt, size: 16, color: Colors.orange),
+                  label: const Text(
+                    'Thay đổi',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ),
               const Divider(),
@@ -1382,9 +1851,32 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
                 onPressed: isSubmitting
                     ? null
                     : () async {
-                        final finalAddr = _deliveryAddress ?? widget.userAddress ?? 'Địa chỉ nhận hàng của bạn';
+                        var finalAddr = _deliveryAddress ?? widget.userAddress ?? '';
+                        final targetLat = _deliveryLat ?? widget.userLat;
+                        final targetLng = _deliveryLng ?? widget.userLng;
+
                         setSheetState(() => isSubmitting = true);
                         try {
+                          if (GeocodingService.isRawCoordinateAddress(finalAddr)) {
+                            if (targetLat != null &&
+                                targetLng != null &&
+                                targetLat != 0 &&
+                                targetLng != 0) {
+                              finalAddr = await GeocodingService.reverseGeocode(
+                                targetLat,
+                                targetLng,
+                              );
+                              _deliveryAddress = finalAddr;
+                            } else {
+                              setSheetState(() => isSubmitting = false);
+                              final picked =
+                                  await _showChangeDeliveryAddressSheet(ctx);
+                              if (!picked || !ctx.mounted) return;
+                              setSheetState(() => isSubmitting = true);
+                              finalAddr = _deliveryAddress ?? '';
+                            }
+                          }
+
                           final newOrder = await order_data.OrderData().createOrder(
                             restaurantId: widget.restaurant.id,
                             restaurantName: widget.restaurant.name,
@@ -1392,7 +1884,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
                             items: selectedOrderItems,
                             deliveryAddress: finalAddr,
                             paymentMethod: paymentMethod,
-                            deliveryFee: deliveryFee,
+                            deliveryFee: _deliveryFee,
                             discount: discount,
                             couponCode: selectedVoucher?['code']?.toString(),
                             userLat: _deliveryLat ?? widget.userLat,

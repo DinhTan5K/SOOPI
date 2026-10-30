@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_address.dart';
 import '../services/profile_api_service.dart';
@@ -27,6 +28,9 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
   bool _isDefault = false;
   bool _isLoading = false;
   bool _isSearchingAddress = false;
+  bool _isLocatingGps = false;
+  double? _selectedLat;
+  double? _selectedLng;
   List<AddressSuggestion> _addressSuggestions = [];
   int _addressSearchVersion = 0;
 
@@ -95,9 +99,80 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       selection: TextSelection.collapsed(offset: suggestion.displayName.length),
     );
     setState(() {
+      _selectedLat = suggestion.latitude;
+      _selectedLng = suggestion.longitude;
       _addressSuggestions = [];
       _isSearchingAddress = false;
     });
+  }
+
+  Future<void> _useCurrentGpsLocation() async {
+    if (_isLocatingGps) return;
+    setState(() => _isLocatingGps = true);
+
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw Exception('Hãy bật dịch vụ Vị trí/GPS trên điện thoại rồi thử lại.');
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) {
+        await Geolocator.openAppSettings();
+        throw Exception('Quyền vị trí đang bị chặn trong Cài đặt.');
+      }
+      if (permission == LocationPermission.denied) {
+        throw Exception('Ứng dụng chưa được cấp quyền truy cập vị trí.');
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+
+      final resolvedAddress = await GeocodingService.reverseGeocode(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (resolvedAddress.isEmpty) {
+        throw Exception('Không phân giải được địa chỉ từ tọa độ GPS.');
+      }
+
+      if (mounted) {
+        _addressSearchVersion++;
+        setState(() {
+          _addressController.text = resolvedAddress;
+          _selectedLat = position.latitude;
+          _selectedLng = position.longitude;
+          _addressSuggestions = [];
+          _isSearchingAddress = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã lấy địa chỉ: $resolvedAddress'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Không lấy được vị trí: $msg'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLocatingGps = false);
+    }
   }
 
   Future<void> _saveAddress() async {
@@ -108,6 +183,11 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     try {
       final apiService = ProfileApiService();
       final addressQuery = _addressController.text.trim();
+      final coords = (_selectedLat != null && _selectedLng != null)
+          ? null
+          : await GeocodingService.getCoordinatesFromAddress(addressQuery);
+      final finalLat = _selectedLat ?? coords?.latitude;
+      final finalLng = _selectedLng ?? coords?.longitude;
 
       if (widget.addressToEdit == null) {
         // Tạo mới
@@ -138,7 +218,6 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       // Tự động định vị và lưu vào SharedPreferences nếu đây là địa chỉ mặc định
       if (_isDefault) {
         try {
-          final coords = await GeocodingService.getCoordinatesFromAddress(addressQuery);
           final prefs = await SharedPreferences.getInstance();
           final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
           await prefs.setString(
@@ -146,8 +225,8 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
             jsonEncode({
               'address': addressQuery,
               'type': _selectedLabel,
-              'latitude': coords?.latitude ?? 10.77689,
-              'longitude': coords?.longitude ?? 106.70089,
+              'latitude': finalLat ?? 10.77689,
+              'longitude': finalLng ?? 106.70089,
             }),
           );
         } catch (_) {}
@@ -246,15 +325,68 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Địa chỉ chi tiết
-              _buildTextField(
+              // Địa chỉ chi tiết + Nút lấy GPS
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Địa chỉ cụ thể *',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                  TextButton.icon(
+                    onPressed: _isLocatingGps ? null : _useCurrentGpsLocation,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: _isLocatingGps
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.orange,
+                            ),
+                          )
+                        : const Icon(Icons.my_location, size: 16, color: Colors.orange),
+                    label: Text(
+                      _isLocatingGps ? 'Đang định vị...' : 'Lấy vị trí hiện tại (GPS)',
+                      style: const TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
                 controller: _addressController,
-                label: 'Địa chỉ cụ thể *',
-                hint: 'Số nhà, tên đường, phường/xã, quận/huyện, thành phố',
-                icon: Icons.location_on_outlined,
                 maxLines: 3,
+                validator: (val) =>
+                    val == null || val.trim().isEmpty ? 'Vui lòng nhập địa chỉ cụ thể' : null,
                 onChanged: _onAddressChanged,
-                validator: (val) => val == null || val.trim().isEmpty ? 'Vui lòng nhập địa chỉ cụ thể' : null,
+                decoration: InputDecoration(
+                  hintText: 'Số nhà, tên đường, phường/xã, quận/huyện, thành phố',
+                  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+                  ),
+                ),
               ),
               if (_isSearchingAddress)
                 const Padding(

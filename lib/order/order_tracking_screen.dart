@@ -91,10 +91,17 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
 
       // 1. Nếu đơn hàng đã lưu sẵn tọa độ người dùng cụ thể
       if (order != null && order.userLat != null && order.userLng != null && order.userLat != 0) {
+        var resolvedAddr = order.deliveryAddress;
+        if (GeocodingService.isRawCoordinateAddress(resolvedAddr)) {
+          resolvedAddr = await GeocodingService.reverseGeocode(
+            order.userLat!,
+            order.userLng!,
+          );
+        }
         if (mounted) {
           setState(() {
             _savedUserPos = LatLng(order.userLat!, order.userLng!);
-            _savedUserAddress = order.deliveryAddress;
+            _savedUserAddress = resolvedAddr;
           });
           _recenterMap();
         }
@@ -108,11 +115,21 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         final query = order.deliveryAddress.trim();
         _savedUserAddress = query;
         final coords = await GeocodingService.getCoordinatesFromAddress(query);
-        if (coords != null && mounted) {
-          setState(() {
-            _savedUserPos = coords;
-          });
-          _recenterMap();
+        if (coords != null) {
+          var cleanAddress = query;
+          if (GeocodingService.isRawCoordinateAddress(cleanAddress)) {
+            cleanAddress = await GeocodingService.reverseGeocode(
+              coords.latitude,
+              coords.longitude,
+            );
+          }
+          if (mounted) {
+            setState(() {
+              _savedUserPos = coords;
+              _savedUserAddress = cleanAddress;
+            });
+            _recenterMap();
+          }
           return;
         }
       }
@@ -138,14 +155,19 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
         final map = jsonDecode(raw) as Map<String, dynamic>;
         final lat = (map['latitude'] as num?)?.toDouble();
         final lng = (map['longitude'] as num?)?.toDouble();
-        final addr = map['address']?.toString();
+        var addr = map['address']?.toString();
 
-        if (lat != null && lng != null && lat != 0 && lng != 0 && mounted) {
-          setState(() {
-            _savedUserPos = LatLng(lat, lng);
-            _savedUserAddress = addr;
-          });
-          _recenterMap();
+        if (lat != null && lng != null && lat != 0 && lng != 0) {
+          if (GeocodingService.isRawCoordinateAddress(addr)) {
+            addr = await GeocodingService.reverseGeocode(lat, lng);
+          }
+          if (mounted) {
+            setState(() {
+              _savedUserPos = LatLng(lat, lng);
+              _savedUserAddress = addr;
+            });
+            _recenterMap();
+          }
           return;
         } else if (addr != null && addr.isNotEmpty) {
           final coords = await GeocodingService.getCoordinatesFromAddress(addr);
@@ -957,7 +979,9 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  order.deliveryAddress,
+                  !GeocodingService.isRawCoordinateAddress(_savedUserAddress)
+                      ? _savedUserAddress!
+                      : order.deliveryAddress,
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                 ),
               ),
