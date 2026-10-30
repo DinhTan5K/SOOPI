@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import '../services/geocoding_service.dart';
 
 Future<Map<String, dynamic>?> editRestaurant(
   BuildContext context, {
@@ -137,36 +138,16 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
   // --- REVERSE GEOCODE: TỌA ĐỘ -> ĐỊA CHỈ & THÀNH PHỐ ---
   Future<void> _reverseGeocode(double lat, double lng) async {
     try {
-      final uri = Uri.https('photon.komoot.io', '/reverse', {
-        'lat': lat.toString(),
-        'lon': lng.toString(),
-      });
-      final response = await http
-          .get(
-            uri,
-            headers: {
-              'Accept': 'application/json',
-              'User-Agent': 'SoopiFood/1.0 (merchant restaurant address)',
-            },
-          )
-          .timeout(const Duration(seconds: 8));
-
-      if (response.statusCode == 200) {
-        final payload = jsonDecode(response.body) as Map<String, dynamic>;
-        final features = payload['features'] as List<dynamic>? ?? [];
-        if (features.isNotEmpty) {
-          final suggestion = _AddressSuggestion.fromJson(features.first as Map<String, dynamic>);
-          if (mounted) {
-            setState(() {
-              if (_address.text.trim().isEmpty || _address.text.contains('GPS')) {
-                _address.text = suggestion.displayName;
-              }
-              if (_city.text.trim().isEmpty && suggestion.city.isNotEmpty) {
-                _city.text = suggestion.city;
-              }
-            });
+      final result = await GeocodingService.reverseGeocodeResult(lat, lng);
+      if (mounted && result.displayName.isNotEmpty) {
+        setState(() {
+          if (_address.text.trim().isEmpty || _address.text.contains('GPS')) {
+            _address.text = result.displayName;
           }
-        }
+          if (_city.text.trim().isEmpty && result.city.isNotEmpty) {
+            _city.text = result.city;
+          }
+        });
       }
     } catch (e) {
       debugPrint('Reverse geocode error: $e');

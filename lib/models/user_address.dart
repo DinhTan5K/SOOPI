@@ -7,6 +7,8 @@ class UserAddress {
   final String fullAddress;
   final String note;
   final bool isDefault;
+  final double? latitude;
+  final double? longitude;
 
   UserAddress({
     required this.id,
@@ -17,6 +19,8 @@ class UserAddress {
     required this.fullAddress,
     this.note = '',
     this.isDefault = false,
+    this.latitude,
+    this.longitude,
   });
 
   factory UserAddress.fromJson(Map<String, dynamic> json) {
@@ -29,6 +33,8 @@ class UserAddress {
       fullAddress: json['fullAddress'] ?? json['address'] ?? '',
       note: json['note'] ?? '',
       isDefault: json['isDefault'] == true,
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
     );
   }
 
@@ -42,6 +48,8 @@ class UserAddress {
       'fullAddress': fullAddress,
       'note': note,
       'isDefault': isDefault,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
     };
   }
 
@@ -54,6 +62,8 @@ class UserAddress {
     String? fullAddress,
     String? note,
     bool? isDefault,
+    double? latitude,
+    double? longitude,
   }) {
     return UserAddress(
       id: id ?? this.id,
@@ -64,6 +74,8 @@ class UserAddress {
       fullAddress: fullAddress ?? this.fullAddress,
       note: note ?? this.note,
       isDefault: isDefault ?? this.isDefault,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
     );
   }
 }

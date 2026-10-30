@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../auth_screen.dart';
+import '../services/auth_service.dart';
 import '../services/profile_api_service.dart';
 
 class ShipperEarningsScreen extends StatefulWidget {
@@ -165,14 +167,23 @@ class _ShipperEarningsScreenState extends State<ShipperEarningsScreen> {
           ),
           const SizedBox(height: 24),
 
-          // Nút quay lại app khách
-          OutlinedButton.icon(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.exit_to_app),
-            label: const Text('Thoát chế độ Tài xế'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red,
-              side: const BorderSide(color: Colors.red),
+          // Nút đăng xuất tài khoản Tài xế
+          ElevatedButton.icon(
+            onPressed: () async {
+              ProfileApiService().clearCache();
+              await AuthService().signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const AuthScreen()),
+                  (route) => false,
+                );
+              }
+            },
+            icon: const Icon(Icons.logout),
+            label: const Text('Đăng xuất tài khoản'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
               minimumSize: const Size.fromHeight(48),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
