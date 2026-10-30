@@ -4,7 +4,6 @@ import '../services/admin_api_service.dart';
 import 'admin_dashboard_tab.dart';
 import 'admin_restaurants_tab.dart';
 import 'admin_users_tab.dart';
-import 'admin_orders_tab.dart';
 import 'admin_vouchers_tab.dart';
 import 'admin_audits_tab.dart';
 
@@ -55,7 +54,6 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
       AdminDashboardTab(api: _api, onNavigateToRestaurants: () => _onTabTapped(1)),
       AdminRestaurantsTab(api: _api),
       AdminUsersTab(api: _api),
-      AdminOrdersTab(api: _api),
       AdminVouchersTab(api: _api),
       AdminAuditsTab(api: _api),
     ];
@@ -64,7 +62,6 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
       'Tổng quan hệ thống',
       'Quản lý Nhà hàng',
       'Quản lý Người dùng',
-      'Quản lý Đơn hàng',
       'Voucher toàn sàn',
       'Nhật ký kiểm duyệt',
     ];
@@ -118,7 +115,6 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
                     NavigationRailDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: Text('Tổng quan')),
                     NavigationRailDestination(icon: Icon(Icons.storefront_outlined), selectedIcon: Icon(Icons.storefront), label: Text('Nhà hàng')),
                     NavigationRailDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: Text('Người dùng')),
-                    NavigationRailDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: Text('Đơn hàng')),
                     NavigationRailDestination(icon: Icon(Icons.confirmation_number_outlined), selectedIcon: Icon(Icons.confirmation_number), label: Text('Vouchers')),
                     NavigationRailDestination(icon: Icon(Icons.history_outlined), selectedIcon: Icon(Icons.history), label: Text('Nhật ký')),
                   ],
@@ -142,7 +138,6 @@ class _AdminMainScreenState extends State<AdminMainScreen> {
                 BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), activeIcon: Icon(Icons.dashboard), label: 'Tổng quan'),
                 BottomNavigationBarItem(icon: Icon(Icons.storefront_outlined), activeIcon: Icon(Icons.storefront), label: 'Nhà hàng'),
                 BottomNavigationBarItem(icon: Icon(Icons.people_outline), activeIcon: Icon(Icons.people), label: 'Tài khoản'),
-                BottomNavigationBarItem(icon: Icon(Icons.receipt_long_outlined), activeIcon: Icon(Icons.receipt_long), label: 'Đơn hàng'),
                 BottomNavigationBarItem(icon: Icon(Icons.confirmation_number_outlined), activeIcon: Icon(Icons.confirmation_number), label: 'Vouchers'),
                 BottomNavigationBarItem(icon: Icon(Icons.history_outlined), activeIcon: Icon(Icons.history), label: 'Nhật ký'),
               ],
