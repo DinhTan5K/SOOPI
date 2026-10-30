@@ -8,7 +8,6 @@ import 'edit_profile_screen.dart';
 import 'address_list_screen.dart';
 import 'change_password_screen.dart';
 import '../order/order_list_screen.dart';
-import '../shipper/shipper_main_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onBackToHome;
@@ -393,25 +392,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
-                    );
-                  },
-                ),
-              ]),
-
-              const SizedBox(height: 14),
-
-              // CHẾ ĐỘ ĐỐI TÁC TÀI XẾ
-              _buildSectionTitle('Đối tác giao nhận'),
-              _buildMenuCard([
-                _buildMenuItem(
-                  icon: Icons.delivery_dining,
-                  iconColor: Colors.deepOrange,
-                  title: 'Chế độ Tài xế SOOPI',
-                  subtitle: 'Bật nhận đơn, cập nhật GPS ngầm 5s/lần',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const ShipperMainScreen()),
                     );
                   },
                 ),

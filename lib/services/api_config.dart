@@ -13,12 +13,12 @@ class ApiConfig extends ChangeNotifier {
   static const String _prefKey = 'custom_server_base_url';
 
   // IP máy tính hiện tại và các candidate phổ biến
-  static const String currentPcWifiIp = '192.168.1.69';
+  static const String currentPcWifiIp = '10.12.96.104';
 
   static const List<String> defaultCandidates = [
     'http://127.0.0.1:5000/api',          // USB cắm cáp (adb reverse) & Windows Desktop
     'http://localhost:5000/api',           // Localhost
-    'http://192.168.1.69:5000/api',       // Wi-Fi máy tính hiện tại (192.168.1.69)
+    'http://10.12.96.104:5000/api',       // Wi-Fi máy tính hiện tại (192.168.1.69)
     'http://10.12.104.120:5000/api',      // Wi-Fi phụ
     'http://192.168.1.190:5000/api',      // Wi-Fi máy tính phụ
     'https://soopifood-dev.loca.lt/api',  // Cloud Tunnel (Hoạt động trên 4G & mọi Wi-Fi)
