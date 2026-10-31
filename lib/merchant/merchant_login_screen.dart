@@ -59,7 +59,7 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
           context,
           email: email,
           initialCooldown: sent.cooldownSeconds ?? 60,
-          initialDevOtp: sent.devOtp,
+          showDevOtp: false,
           onVerify: (otp) async {
             final result = await api.verifyRegistrationOtp(email, otp);
             if (!result.success) throw Exception(result.message);
