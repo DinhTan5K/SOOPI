@@ -103,9 +103,10 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const MyApp());
-    await tester.ensureVisible(find.text('Dành cho chủ quán'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Dành cho chủ quán'));
+    await tester.ensureVisible(find.text('Đối tác Chủ quán'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Đối tác Chủ quán'));
     await tester.pumpAndSettle();
     expect(find.byType(MerchantLoginScreen), findsOneWidget);
   });
@@ -191,6 +192,8 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byType(Switch));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -160));
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
     expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);

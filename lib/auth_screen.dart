@@ -367,8 +367,10 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                 // Thanh công cụ phụ ở trên cùng (Dành cho Chủ quán & Cấu hình IP máy chủ)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       // Chip Cài đặt IP máy chủ BE
                       InkWell(
@@ -607,8 +609,11 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                               // Tùy chọn Quên mật khẩu & Ghi nhớ
                               const SizedBox(height: 8),
                               if (_isLogin)
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                Wrap(
+                                  alignment: WrapAlignment.spaceBetween,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 8,
+                                  runSpacing: 8,
                                   children: [
                                     Row(
                                       mainAxisSize: MainAxisSize.min,

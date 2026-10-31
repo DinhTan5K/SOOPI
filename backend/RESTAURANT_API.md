@@ -131,3 +131,19 @@ List results use `{ items, total, page, pageSize }`, with page >= 1, pageSize 1�
 Use Swagger with two Firebase accounts and an administrator to verify creating multiple restaurants, owner isolation, approval/rejection/resubmission, category/menu management and account/restaurant locks. A real Firebase ID token and configured Cloudinary account are required for live image upload verification.
 
 Flutter, order creation/processing, payments, push notifications and SignalR are outside this change.
+
+## Owner review viewer
+
+`GET /api/merchant/restaurants/{restaurantId}/reviews?page=1&pageSize=20` requires
+a Firebase bearer token and ownership of the restaurant. It reads existing customer
+reviews, newest first, without changing the review submission API or database schema.
+Another owner's restaurant returns `404`; anonymous callers get `401`.
+
+Response: `{ items, total, page, pageSize, averageRating }`. Each item contains
+`id`, `orderId`, `orderCode`, `customerName`, `restaurantRating`, `comment`, and
+`createdAt`. The average and total cover all reviews of this restaurant, including
+when the requested page is empty. Empty restaurants return average `0` and total `0`.
+There are no individual dish ratings in the existing review model.
+
+The owner opens this viewer from **Quán của tôi → Xem đánh giá**. It supports
+refresh, loading more reviews, and retrying failed requests.

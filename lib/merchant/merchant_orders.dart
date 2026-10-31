@@ -1,5 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import 'merchant_style.dart';
 import '../services/merchant_api_service.dart';
 import '../services/order_socket_service.dart';
 
@@ -112,21 +115,26 @@ class _MerchantOrdersState extends State<MerchantOrders>
     }
   }
 
-  Future<void> _updateStatus(String orderId, String newStatus, {String? note}) async {
+  Future<void> _updateStatus(
+    String orderId,
+    String newStatus, {
+    String? note,
+  }) async {
     final restId = widget.restaurantId;
     final api = widget.api;
     if (restId == null || api == null) return;
 
     try {
-      await api.request(
-        'PATCH',
-        'restaurants/$restId/orders/$orderId/status',
-        {'status': newStatus, 'note': note},
-      );
+      await api.request('PATCH', 'restaurants/$restId/orders/$orderId/status', {
+        'status': newStatus,
+        'note': note,
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã cập nhật trạng thái sang: ${_statusLabel(newStatus)}'),
+            content: Text(
+              'Đã cập nhật trạng thái sang: ${_statusLabel(newStatus)}',
+            ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -136,7 +144,10 @@ class _MerchantOrdersState extends State<MerchantOrders>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi cập nhật: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Lỗi cập nhật: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -219,14 +230,24 @@ class _MerchantOrdersState extends State<MerchantOrders>
     return Column(
       children: [
         // Header
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: MerchantSectionHeader(
+            title: 'Đơn hàng của quán',
+            subtitle: 'Theo dõi đơn mới, chuẩn bị món và giao cho tài xế.',
+            icon: Icons.receipt_long_rounded,
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Quản lý Đơn hàng',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              const Expanded(
+                child: Text(
+                  'Quản lý Đơn hàng',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
               ),
               TextButton(
                 onPressed: () => _fetchOrders(),
@@ -248,16 +269,20 @@ class _MerchantOrdersState extends State<MerchantOrders>
             ),
             child: const Text(
               'Quán đang tạm ngưng nhận đơn.',
-              style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                color: Colors.black87,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
 
         // Tabs
         TabBar(
           controller: _tabController,
-          labelColor: Colors.orange,
+          labelColor: MerchantStyle.primary,
           unselectedLabelColor: Colors.black54,
-          indicatorColor: Colors.orange,
+          indicatorColor: MerchantStyle.primary,
           indicatorWeight: 3,
           isScrollable: true,
           tabs: [
@@ -268,14 +293,21 @@ class _MerchantOrdersState extends State<MerchantOrders>
                   if (cookingCount > 0) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
-                        color: Colors.orange,
+                        color: MerchantStyle.primary,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '$cookingCount',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
@@ -289,14 +321,21 @@ class _MerchantOrdersState extends State<MerchantOrders>
                   if (deliveringCount > 0) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.blue,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '$deliveringCount',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
@@ -310,29 +349,31 @@ class _MerchantOrdersState extends State<MerchantOrders>
         // Tab views
         Expanded(
           child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Colors.orange))
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.orange),
+                )
               : _error != null
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(_error!, style: const TextStyle(color: Colors.red)),
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            onPressed: () => _fetchOrders(),
-                            child: const Text('Thử lại'),
-                          ),
-                        ],
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(_error!, style: const TextStyle(color: Colors.red)),
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                        onPressed: () => _fetchOrders(),
+                        child: const Text('Thử lại'),
                       ),
-                    )
-                  : TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildOrderList(0),
-                        _buildOrderList(1),
-                        _buildOrderList(2),
-                      ],
-                    ),
+                    ],
+                  ),
+                )
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildOrderList(0),
+                    _buildOrderList(1),
+                    _buildOrderList(2),
+                  ],
+                ),
         ),
       ],
     );
@@ -342,19 +383,17 @@ class _MerchantOrdersState extends State<MerchantOrders>
     final list = _filterOrders(tabIndex);
 
     if (list.isEmpty) {
-      return Center(
-        child: Text(
-          tabIndex == 0
-              ? 'Hiện chưa có đơn hàng mới nào.'
-              : 'Không có đơn hàng trong mục này.',
-          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-        ),
+      return MerchantEmptyState(
+        icon: Icons.receipt_long_outlined,
+        message: tabIndex == 0
+            ? 'Hiện chưa có đơn hàng mới nào.'
+            : 'Không có đơn hàng trong mục này.',
       );
     }
 
     return RefreshIndicator(
       onRefresh: () => _fetchOrders(),
-      color: Colors.orange,
+      color: MerchantStyle.primary,
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: list.length,
@@ -384,8 +423,6 @@ class _MerchantOrdersState extends State<MerchantOrders>
     final hasShipper = shipperId != null && shipperId.isNotEmpty;
 
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -397,14 +434,22 @@ class _MerchantOrdersState extends State<MerchantOrders>
               children: [
                 Text(
                   '#$orderCode',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: _statusColor(status).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _statusColor(status).withValues(alpha: 0.5)),
+                    border: Border.all(
+                      color: _statusColor(status).withValues(alpha: 0.5),
+                    ),
                   ),
                   child: Text(
                     _statusLabel(status),
@@ -422,10 +467,18 @@ class _MerchantOrdersState extends State<MerchantOrders>
             // Customer info
             Row(
               children: [
-                Text(customerName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Expanded(
+                  child: Text(
+                    customerName,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
                 if (customerPhone.isNotEmpty) ...[
                   const SizedBox(width: 8),
-                  Text('• $customerPhone', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                  Text(
+                    '• $customerPhone',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
                 ],
               ],
             ),
@@ -440,25 +493,34 @@ class _MerchantOrdersState extends State<MerchantOrders>
               ),
             ],
 
-            if (statusLow == 'readyforpickup' || statusLow == 'delivering' || statusLow == 'pickedup') ...[
+            if (statusLow == 'readyforpickup' ||
+                statusLow == 'delivering' ||
+                statusLow == 'pickedup') ...[
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: hasShipper ? Colors.green.shade50 : Colors.orange.shade50,
+                  color: hasShipper
+                      ? Colors.green.shade50
+                      : Colors.orange.shade50,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   hasShipper
                       ? (statusLow == 'readyforpickup'
-                          ? 'Tài xế ${shipperName ?? 'SOOPI'} (${shipperPhone ?? ''}) đang đến quán lấy món'
-                          : 'Tài xế ${shipperName ?? 'SOOPI'} (${shipperPhone ?? ''}) đang giao đến khách hàng')
+                            ? 'Tài xế ${shipperName ?? 'SOOPI'} (${shipperPhone ?? ''}) đang đến quán lấy món'
+                            : 'Tài xế ${shipperName ?? 'SOOPI'} (${shipperPhone ?? ''}) đang giao đến khách hàng')
                       : 'Đang tìm tài xế gần quán...',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: hasShipper ? Colors.green.shade800 : Colors.deepOrange.shade800,
+                    color: hasShipper
+                        ? Colors.green.shade800
+                        : Colors.deepOrange.shade800,
                   ),
                 ),
               ),
@@ -474,7 +536,11 @@ class _MerchantOrdersState extends State<MerchantOrders>
                   children: [
                     Text(
                       '${item['quantity']}x',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 13),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: MerchantStyle.primary,
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -484,8 +550,14 @@ class _MerchantOrdersState extends State<MerchantOrders>
                       ),
                     ),
                     Text(
-                      _formatMoney(((item['unitPrice'] as num?)?.toInt() ?? 0) * ((item['quantity'] as num?)?.toInt() ?? 1)),
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      _formatMoney(
+                        ((item['unitPrice'] as num?)?.toInt() ?? 0) *
+                            ((item['quantity'] as num?)?.toInt() ?? 1),
+                      ),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
@@ -502,7 +574,11 @@ class _MerchantOrdersState extends State<MerchantOrders>
                 ),
                 child: Text(
                   'Ghi chú: "$note"',
-                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.amber.shade900),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.amber.shade900,
+                  ),
                 ),
               ),
             ],
@@ -516,10 +592,17 @@ class _MerchantOrdersState extends State<MerchantOrders>
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Tổng thu quán', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                    const Text(
+                      'Tổng thu quán',
+                      style: TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
                     Text(
                       _formatMoney(total),
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.orange),
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: MerchantStyle.primary,
+                      ),
                     ),
                   ],
                 ),
@@ -529,7 +612,11 @@ class _MerchantOrdersState extends State<MerchantOrders>
                   children: [
                     if (statusLow == 'pending') ...[
                       OutlinedButton(
-                        onPressed: () => _updateStatus(orderId, 'Cancelled', note: 'Quán bận/hết món'),
+                        onPressed: () => _updateStatus(
+                          orderId,
+                          'Cancelled',
+                          note: 'Quán bận/hết món',
+                        ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
                           side: const BorderSide(color: Colors.red),
@@ -539,18 +626,29 @@ class _MerchantOrdersState extends State<MerchantOrders>
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: () => _updateStatus(orderId, 'Preparing'),
-                        style: FilledButton.styleFrom(backgroundColor: Colors.green),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
                         child: const Text('Nhận đơn'),
                       ),
-                    ] else if (statusLow == 'accepted' || statusLow == 'preparing') ...[
+                    ] else if (statusLow == 'accepted' ||
+                        statusLow == 'preparing') ...[
                       FilledButton(
-                        onPressed: () => _updateStatus(orderId, 'ReadyForPickup'),
-                        style: FilledButton.styleFrom(backgroundColor: Colors.blue),
+                        onPressed: () =>
+                            _updateStatus(orderId, 'ReadyForPickup'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                        ),
                         child: const Text('Xong - Giao shipper'),
                       ),
-                    ] else if (statusLow == 'readyforpickup' && !hasShipper) ...[
+                    ] else if (statusLow == 'readyforpickup' &&
+                        !hasShipper) ...[
                       OutlinedButton(
-                        onPressed: () => _updateStatus(orderId, 'ReadyForPickup', note: 'Phát lại tín hiệu gọi Shipper'),
+                        onPressed: () => _updateStatus(
+                          orderId,
+                          'ReadyForPickup',
+                          note: 'Phát lại tín hiệu gọi Shipper',
+                        ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.blue,
                           side: const BorderSide(color: Colors.blue),

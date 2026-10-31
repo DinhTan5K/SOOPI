@@ -1,5 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import 'merchant_style.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'merchant_screen.dart';
@@ -81,10 +85,7 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
         }
       } else {
         await FirebaseAuth.instance
-            .signInWithEmailAndPassword(
-              email: email,
-              password: password,
-            )
+            .signInWithEmailAndPassword(email: email, password: password)
             .timeout(const Duration(seconds: 15));
 
         // Kiểm tra phân quyền (Role): Chỉ tài khoản Owner hoặc Admin mới được phép vào Cổng Chủ quán!
@@ -153,174 +154,185 @@ class _MerchantLoginScreenState extends State<MerchantLoginScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Dành cho chủ quán')),
-    body: SafeArea(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Form(
-              key: _form,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Image.asset('img/logo.png', width: 96, height: 96),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Quán của bạn,\ntrong tầm tay.',
-                    style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _registering
-                        ? 'Tạo tài khoản để đăng ký và quản lý quán ăn.'
-                        : 'Đăng nhập để quản lý quán và thực đơn.',
-                    style: const TextStyle(color: Colors.black54),
-                  ),
-                  const SizedBox(height: 28),
-                  if (_registering) ...[
-                    TextFormField(
-                      controller: _name,
-                      enabled: !_loading,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Họ tên chủ quán',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) =>
-                          value == null || value.trim().isEmpty
-                          ? 'Nhập họ tên.'
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  TextFormField(
-                    controller: _email,
-                    enabled: !_loading,
-                    keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.username],
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Email chủ quán',
-                      prefixIcon: Icon(Icons.mail_outline),
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) =>
-                        v == null ||
-                            !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
-                                .hasMatch(v.trim())
-                        ? 'Nhập email hợp lệ.'
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _password,
-                    enabled: !_loading,
-                    obscureText: _hidden,
-                    autofillHints: const [AutofillHints.password],
-                    onFieldSubmitted: (_) => _login(),
-                    decoration: InputDecoration(
-                      labelText: 'Mật khẩu',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        tooltip: _hidden ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
-                        onPressed: () => setState(() => _hidden = !_hidden),
-                        icon: Icon(
-                          _hidden
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
+  Widget build(BuildContext context) => MerchantAppearance(
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('Dành cho chủ quán'),
+        flexibleSpace: const DecoratedBox(
+          decoration: BoxDecoration(gradient: MerchantStyle.gradient),
+        ),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Form(
+                    key: _form,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const MerchantSectionHeader(
+                          title: 'Quán của bạn,\ntrong tầm tay.',
+                          subtitle: 'Đồng hành cùng SOOPI FOOD',
+                          icon: Icons.storefront_rounded,
                         ),
-                      ),
-                    ),
-                    validator: (v) => v == null || v.isEmpty
-                        ? 'Nhập mật khẩu.'
-                        : _registering && v.length < 6
-                        ? 'Mật khẩu phải có ít nhất 6 ký tự.'
-                        : null,
-                  ),
-                  if (_registering) ...[
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _confirmPassword,
-                      enabled: !_loading,
-                      obscureText: _hidden,
-                      decoration: const InputDecoration(
-                        labelText: 'Nhập lại mật khẩu',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) =>
-                          value != _password.text ||
-                              value == null ||
-                              value.isEmpty
-                          ? 'Mật khẩu nhập lại không khớp.'
-                          : null,
-                      onFieldSubmitted: (_) => _login(),
-                    ),
-                  ],
-                  if (!_registering)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _loading
-                            ? null
-                            : () => ForgotPasswordDialog.show(
-                                  context,
-                                  initialEmail: _email.text.trim(),
-                                ),
-                        child: const Text('Quên mật khẩu?'),
-                      ),
-                    ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                        const SizedBox(height: 20),
+                        Text(
+                          _registering
+                              ? 'Tạo tài khoản để đăng ký và quản lý quán ăn.'
+                              : 'Đăng nhập để quản lý quán và thực đơn.',
+                          style: const TextStyle(color: MerchantStyle.muted),
                         ),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: _loading ? null : _login,
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: _loading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(
-                              _registering
-                                  ? 'Đăng ký tài khoản chủ quán'
-                                  : 'Đăng nhập quản lý',
+                        const SizedBox(height: 28),
+                        if (_registering) ...[
+                          TextFormField(
+                            controller: _name,
+                            enabled: !_loading,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Họ tên chủ quán',
                             ),
+                            validator: (value) =>
+                                value == null || value.trim().isEmpty
+                                ? 'Nhập họ tên.'
+                                : null,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        TextFormField(
+                          controller: _email,
+                          enabled: !_loading,
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.username],
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Email chủ quán',
+                            prefixIcon: Icon(Icons.mail_outline),
+                          ),
+                          validator: (v) =>
+                              v == null ||
+                                  !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                                      .hasMatch(v.trim())
+                              ? 'Nhập email hợp lệ.'
+                              : null,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _password,
+                          enabled: !_loading,
+                          obscureText: _hidden,
+                          autofillHints: const [AutofillHints.password],
+                          onFieldSubmitted: (_) => _login(),
+                          decoration: InputDecoration(
+                            labelText: 'Mật khẩu',
+                            prefixIcon: const Icon(Icons.lock_outline),
+
+                            suffixIcon: IconButton(
+                              tooltip: _hidden
+                                  ? 'Hiện mật khẩu'
+                                  : 'Ẩn mật khẩu',
+                              onPressed: () =>
+                                  setState(() => _hidden = !_hidden),
+                              icon: Icon(
+                                _hidden
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                          ),
+                          validator: (v) => v == null || v.isEmpty
+                              ? 'Nhập mật khẩu.'
+                              : _registering && v.length < 6
+                              ? 'Mật khẩu phải có ít nhất 6 ký tự.'
+                              : null,
+                        ),
+                        if (_registering) ...[
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _confirmPassword,
+                            enabled: !_loading,
+                            obscureText: _hidden,
+                            decoration: const InputDecoration(
+                              labelText: 'Nhập lại mật khẩu',
+                            ),
+                            validator: (value) =>
+                                value != _password.text ||
+                                    value == null ||
+                                    value.isEmpty
+                                ? 'Mật khẩu nhập lại không khớp.'
+                                : null,
+                            onFieldSubmitted: (_) => _login(),
+                          ),
+                        ],
+                        if (!_registering)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _loading
+                                  ? null
+                                  : () => ForgotPasswordDialog.show(
+                                      context,
+                                      initialEmail: _email.text.trim(),
+                                    ),
+                              child: const Text('Quên mật khẩu?'),
+                            ),
+                          ),
+                        if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(
+                              _error!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: _loading ? null : _login,
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Text(
+                                    _registering
+                                        ? 'Đăng ký tài khoản chủ quán'
+                                        : 'Đăng nhập quản lý',
+                                  ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _loading
+                              ? null
+                              : () => setState(() {
+                                  _registering = !_registering;
+                                  _error = null;
+                                  _form.currentState?.reset();
+                                  _password.clear();
+                                  _confirmPassword.clear();
+                                }),
+                          child: Text(
+                            _registering
+                                ? 'Đã có tài khoản? Đăng nhập'
+                                : 'Chưa có tài khoản? Đăng ký chủ quán',
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
                     ),
                   ),
-                  TextButton(
-                    onPressed: _loading
-                        ? null
-                        : () => setState(() {
-                            _registering = !_registering;
-                            _error = null;
-                            _form.currentState?.reset();
-                            _password.clear();
-                            _confirmPassword.clear();
-                          }),
-                    child: Text(
-                      _registering
-                          ? 'Đã có tài khoản? Đăng nhập'
-                          : 'Chưa có tài khoản? Đăng ký chủ quán',
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+                ),
               ),
             ),
           ),

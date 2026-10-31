@@ -1,6 +1,10 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import 'merchant_style.dart';
 import '../services/order_socket_service.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/profile_api_service.dart';
@@ -9,6 +13,7 @@ import 'merchant_data.dart';
 import 'menu_editor.dart';
 import 'merchant_orders.dart';
 import 'merchant_vouchers.dart';
+import 'merchant_reviews.dart';
 import 'menu_photo.dart';
 import 'restaurant_editor.dart';
 
@@ -83,14 +88,18 @@ class _MerchantScreenState extends State<MerchantScreen> {
   }
 
   void _showIncomingOrderAlert(Map<String, dynamic> order) {
-    showDialog(
+    showMerchantDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'CÓ ĐƠN HÀNG MỚI',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.deepOrange),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: Colors.deepOrange,
+          ),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -106,20 +115,34 @@ class _MerchantScreenState extends State<MerchantScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Mã đơn:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Mã đơn:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   Text(
                     '#${order['orderCode'] ?? (order['orderId']?.toString().substring(0, 8) ?? '---')}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange, fontSize: 16),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: MerchantStyle.primary,
+                      fontSize: 16,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
-            Text('Khách hàng: ${order['customerName'] ?? 'Khách hàng'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            if (order['customerPhone'] != null && order['customerPhone'].toString().isNotEmpty)
+            Text(
+              'Khách hàng: ${order['customerName'] ?? 'Khách hàng'}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            if (order['customerPhone'] != null &&
+                order['customerPhone'].toString().isNotEmpty)
               Text('SĐT: ${order['customerPhone']}'),
             const SizedBox(height: 4),
-            Text('Giao đến: ${order['deliveryAddress'] ?? 'Địa chỉ khách'}', style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+            Text(
+              'Giao đến: ${order['deliveryAddress'] ?? 'Địa chỉ khách'}',
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+            ),
             const Divider(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -127,13 +150,24 @@ class _MerchantScreenState extends State<MerchantScreen> {
                 const Text('Tổng thu quán:', style: TextStyle(fontSize: 14)),
                 Text(
                   '${((order['totalAmount'] as num?)?.toInt() ?? 0).toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]}.')}đ',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                    fontSize: 18,
+                  ),
                 ),
               ],
             ),
-            if (order['note'] != null && order['note'].toString().isNotEmpty) ...[
+            if (order['note'] != null &&
+                order['note'].toString().isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text('Ghi chú: "${order['note']}"', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.redAccent)),
+              Text(
+                'Ghi chú: "${order['note']}"',
+                style: const TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: Colors.redAccent,
+                ),
+              ),
             ],
           ],
         ),
@@ -156,7 +190,9 @@ class _MerchantScreenState extends State<MerchantScreen> {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Đã nhận đơn! Đơn hàng đang trong mục Đang nấu.'),
+                        content: Text(
+                          'Đã nhận đơn! Đơn hàng đang trong mục Đang nấu.',
+                        ),
                         backgroundColor: Colors.green,
                       ),
                     );
@@ -167,7 +203,10 @@ class _MerchantScreenState extends State<MerchantScreen> {
                 } catch (e) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Lỗi nhận đơn: $e'), backgroundColor: Colors.red),
+                      SnackBar(
+                        content: Text('Lỗi nhận đơn: $e'),
+                        backgroundColor: Colors.red,
+                      ),
                     );
                   }
                 }
@@ -225,7 +264,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
     try {
       final rows = await _data.listRestaurants();
       if (!mounted) return;
-      final id = await showDialog<String>(
+      final id = await showMerchantDialog<String>(
         context: context,
         builder: (context) => SimpleDialog(
           title: const Text('Chọn quán'),
@@ -273,7 +312,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
 
   Future<bool> _confirmLeave() async {
     if (!_dirty) return true;
-    return await showDialog<bool>(
+    return await showMerchantDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Lịch chưa được lưu'),
@@ -302,6 +341,10 @@ class _MerchantScreenState extends State<MerchantScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (_) => MenuEditor(item: item, categories: _data.categories),
     );
     if (result == null || !mounted) return;
@@ -317,7 +360,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
 
   Future<void> _categoryEditor([String? existing]) async {
     final controller = TextEditingController(text: existing ?? '');
-    final action = await showDialog<String>(
+    final action = await showMerchantDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(existing == null ? 'Thêm danh mục' : 'Sửa danh mục'),
@@ -376,7 +419,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
   }
 
   Future<void> _delete(MenuItem item) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showMerchantDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Xóa món?'),
@@ -406,7 +449,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
       initialTime: TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-        child: child!,
+        child: MerchantAppearance(child: child!),
       ),
     );
     if (value == null || !mounted) return;
@@ -432,188 +475,194 @@ class _MerchantScreenState extends State<MerchantScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: !_dirty && !_saving,
-    onPopInvokedWithResult: (didPop, result) async {
-      if (didPop || _saving) return;
-      if (await _confirmLeave() && mounted) {
-        setState(() => _dirty = false);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) Navigator.pop(context);
-        });
-      }
-    },
-    child: Scaffold(
-      backgroundColor: const Color(0xFFF8F7F4),
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('SOOPI • Chủ quán'),
-        actions: [
-          if (_data.remote) ...[
+  Widget build(BuildContext context) => MerchantAppearance(
+    child: PopScope(
+      canPop: !_dirty && !_saving,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop || _saving) return;
+        if (await _confirmLeave() && mounted) {
+          setState(() => _dirty = false);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) Navigator.pop(context);
+          });
+        }
+      },
+      child: Scaffold(
+        backgroundColor: MerchantStyle.background,
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: const Text('SOOPI • Chủ quán'),
+          flexibleSpace: const DecoratedBox(
+            decoration: BoxDecoration(gradient: MerchantStyle.gradient),
+          ),
+          actions: [
+            if (_data.remote) ...[
+              IconButton(
+                tooltip: 'Chọn quán',
+                onPressed: _loading || _saving ? null : _selectRestaurant,
+                icon: const Icon(Icons.storefront),
+              ),
+              IconButton(
+                tooltip: 'Đăng ký quán',
+                onPressed: _loading || _saving
+                    ? null
+                    : () => _restaurant(create: true),
+                icon: const Icon(Icons.add_business),
+              ),
+            ],
             IconButton(
-              tooltip: 'Chọn quán',
-              onPressed: _loading || _saving ? null : _selectRestaurant,
-              icon: const Icon(Icons.storefront),
-            ),
-            IconButton(
-              tooltip: 'Đăng ký quán',
-              onPressed: _loading || _saving
+              tooltip: 'Đăng xuất',
+              onPressed: _saving
                   ? null
-                  : () => _restaurant(create: true),
-              icon: const Icon(Icons.add_business),
+                  : () async {
+                      if (await _confirmLeave() && mounted) {
+                        if (_data.remote) {
+                          try {
+                            await FirebaseAuth.instance.signOut();
+                            ProfileApiService().clearCache();
+                          } catch (error) {
+                            if (mounted) _message(error.toString());
+                            return;
+                          }
+                          if (!mounted) return;
+                        }
+                        setState(() => _dirty = false);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted) return;
+                          Navigator.of(
+                            context,
+                          ).pushNamedAndRemoveUntil('/login', (route) => false);
+                        });
+                      }
+                    },
+              icon: const Icon(Icons.logout),
             ),
           ],
-          IconButton(
-            tooltip: 'Đăng xuất',
-            onPressed: _saving
-                ? null
-                : () async {
-                    if (await _confirmLeave() && mounted) {
-                      if (_data.remote) {
-                        try {
-                          await FirebaseAuth.instance.signOut();
-                          ProfileApiService().clearCache();
-                        } catch (error) {
-                          if (mounted) _message(error.toString());
-                          return;
-                        }
-                        if (!mounted) return;
-                      }
-                      setState(() => _dirty = false);
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (!mounted) return;
-                        Navigator.of(context).pushNamedAndRemoveUntil(
-                          '/login',
-                          (route) => false,
-                        );
-                      });
-                    }
-                  },
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _restaurantChoices != null
-          ? _restaurantPicker()
-          : _loadFailed
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _loadError?.contains('Khách hàng') == true
-                          ? Icons.block_rounded
-                          : Icons.error_outline,
-                      size: 52,
-                      color: Colors.red.shade400,
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      _loadError ?? 'Không thể đọc dữ liệu quán.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _restaurantChoices != null
+            ? _restaurantPicker()
+            : _loadFailed
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _loadError?.contains('Khách hàng') == true
+                            ? Icons.block_rounded
+                            : Icons.error_outline,
+                        size: 52,
+                        color: Colors.red.shade400,
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (_loadError?.contains('Khách hàng') == true)
-                      FilledButton.icon(
-                        onPressed: () async {
-                          final nav = Navigator.of(context);
-                          await FirebaseAuth.instance.signOut();
-                          ProfileApiService().clearCache();
-                          if (mounted) nav.pop();
-                        },
-                        icon: const Icon(Icons.arrow_back),
-                        label: const Text('Đăng xuất & Quay lại'),
-                      )
-                    else ...[
-                      FilledButton(
-                        onPressed: _load,
-                        child: const Text('Thử lại'),
-                      ),
-                      if (_data.remote && _data.restaurantId == null)
-                        OutlinedButton.icon(
-                          onPressed: _saving
-                              ? null
-                              : () => _restaurant(create: true),
-                          icon: const Icon(Icons.add_business),
-                          label: const Text('Đăng ký quán ăn'),
+                      const SizedBox(height: 14),
+                      Text(
+                        _loadError ?? 'Không thể đọc dữ liệu quán.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_loadError?.contains('Khách hàng') == true)
+                        FilledButton.icon(
+                          onPressed: () async {
+                            final nav = Navigator.of(context);
+                            await FirebaseAuth.instance.signOut();
+                            ProfileApiService().clearCache();
+                            if (mounted) nav.pop();
+                          },
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('Đăng xuất & Quay lại'),
+                        )
+                      else ...[
+                        FilledButton(
+                          onPressed: _load,
+                          child: const Text('Thử lại'),
+                        ),
+                        if (_data.remote && _data.restaurantId == null)
+                          OutlinedButton.icon(
+                            onPressed: _saving
+                                ? null
+                                : () => _restaurant(create: true),
+                            icon: const Icon(Icons.add_business),
+                            label: const Text('Đăng ký quán ăn'),
+                          ),
+                      ],
                     ],
+                  ),
+                ),
+              )
+            : AbsorbPointer(
+                absorbing: _saving,
+                child: Column(
+                  children: [
+                    if (_saving) const LinearProgressIndicator(),
+                    Expanded(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 760),
+                          child: IndexedStack(
+                            index: _tab,
+                            children: [
+                              _shop(),
+                              _menu(),
+                              MerchantOrders(
+                                acceptingOrders: _data.acceptingOrders,
+                                restaurantId: _data.restaurantId,
+                                api: _data.api,
+                              ),
+                              if (_tab == 3)
+                                MerchantVouchers(
+                                  key: ValueKey(
+                                    'vouchers-${_data.restaurantId}',
+                                  ),
+                                  restaurantId: _data.restaurantId,
+                                  api: _data.api,
+                                  items: _data.items,
+                                )
+                              else
+                                const SizedBox.shrink(),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            )
-          : AbsorbPointer(
-              absorbing: _saving,
-              child: Column(
-                children: [
-                  if (_saving) const LinearProgressIndicator(),
-                  Expanded(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 760),
-                        child: IndexedStack(
-                          index: _tab,
-                          children: [
-                            _shop(),
-                            _menu(),
-                            MerchantOrders(
-                              acceptingOrders: _data.acceptingOrders,
-                              restaurantId: _data.restaurantId,
-                              api: _data.api,
-                            ),
-                            if (_tab == 3)
-                              MerchantVouchers(
-                                key: ValueKey('vouchers-${_data.restaurantId}'),
-                                restaurantId: _data.restaurantId,
-                                api: _data.api,
-                                items: _data.items,
-                              )
-                            else
-                              const SizedBox.shrink(),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _tab,
+          onDestinationSelected:
+              _saving || _loading || _loadFailed || _restaurantChoices != null
+              ? null
+              : (value) => setState(() => _tab = value),
+          destinations: const [
+            // Keep destination order aligned with the IndexedStack.
+            NavigationDestination(
+              icon: Icon(Icons.storefront_outlined),
+              selectedIcon: Icon(Icons.storefront),
+              label: 'Quán của tôi',
             ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected:
-            _saving || _loading || _loadFailed || _restaurantChoices != null
-            ? null
-            : (value) => setState(() => _tab = value),
-        destinations: const [
-          // Keep destination order aligned with the IndexedStack.
-          NavigationDestination(
-            icon: Icon(Icons.storefront_outlined),
-            selectedIcon: Icon(Icons.storefront),
-            label: 'Quán của tôi',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.restaurant_menu),
-            label: 'Thực đơn',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: 'Đơn hàng',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.local_offer_outlined),
-            selectedIcon: Icon(Icons.local_offer),
-            label: 'Voucher',
-          ),
-        ],
+            NavigationDestination(
+              icon: Icon(Icons.restaurant_menu),
+              label: 'Thực đơn',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.receipt_long_outlined),
+              selectedIcon: Icon(Icons.receipt_long),
+              label: 'Đơn hàng',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.local_offer_outlined),
+              selectedIcon: Icon(Icons.local_offer),
+              label: 'Voucher',
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -653,17 +702,27 @@ class _MerchantScreenState extends State<MerchantScreen> {
   Widget _shop() => ListView(
     padding: const EdgeInsets.all(20),
     children: [
-      const Text(
-        'Quán của tôi',
-        style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        '${_data.restaurantName} • ${_data.approvalStatus}',
-        style: TextStyle(color: Colors.black54),
+      MerchantSectionHeader(
+        title: 'Quán của tôi',
+        subtitle: '${_data.restaurantName} • ${_data.approvalStatus}',
+        icon: Icons.storefront_rounded,
       ),
       const SizedBox(height: 20),
       if (_data.remote) ...[
+        OutlinedButton.icon(
+          onPressed: _data.restaurantId == null
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MerchantReviewsScreen(
+                      restaurantId: _data.restaurantId!,
+                      api: _data.api,
+                    ),
+                  ),
+                ),
+          icon: const Icon(Icons.rate_review_outlined),
+          label: const Text('Xem đánh giá'),
+        ),
         OutlinedButton(
           onPressed: _restaurant,
           child: const Text('Sửa thông tin quán'),
@@ -702,7 +761,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           subtitle: const Text(
-            'Trạng thái thủ công; lịch mở cửa được quản lý riêng.',
+            'Bật để nhận đơn mới. Quán vẫn hoạt động theo giờ mở cửa.',
           ),
         ),
       ),
@@ -811,6 +870,12 @@ class _MerchantScreenState extends State<MerchantScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
       children: [
+        const MerchantSectionHeader(
+          title: 'Thực đơn của quán',
+          subtitle: 'Chăm chút từng món ngon, sẵn sàng cho đơn mới.',
+          icon: Icons.restaurant_menu_rounded,
+        ),
+        const SizedBox(height: 20),
         Row(
           children: [
             const Expanded(
@@ -837,7 +902,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
           decoration: InputDecoration(
             hintText: 'Tìm tên món...',
             prefixIcon: const Icon(Icons.search),
-            border: const OutlineInputBorder(),
+
             suffixIcon: query.isEmpty
                 ? null
                 : IconButton(
@@ -920,11 +985,11 @@ class _MerchantScreenState extends State<MerchantScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (item.imageBase64 != null)
-                        MenuPhoto(imageBase64: item.imageBase64, size: 52)
+                        MenuPhoto(imageBase64: item.imageBase64, size: 72)
                       else
                         Container(
-                          width: 52,
-                          height: 52,
+                          width: 72,
+                          height: 72,
                           decoration: BoxDecoration(
                             color: const Color(0xFFFFEAD4),
                             borderRadius: BorderRadius.circular(14),
@@ -933,7 +998,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                             item.category == 'Đồ uống'
                                 ? Icons.local_cafe_outlined
                                 : Icons.lunch_dining,
-                            color: Colors.deepOrange,
+                            color: MerchantStyle.primary,
                           ),
                         ),
                       const SizedBox(width: 12),
@@ -956,7 +1021,7 @@ class _MerchantScreenState extends State<MerchantScreen> {
                             Text(
                               money(item.price),
                               style: const TextStyle(
-                                color: Colors.deepOrange,
+                                color: MerchantStyle.primary,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),

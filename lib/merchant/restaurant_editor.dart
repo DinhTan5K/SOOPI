@@ -1,15 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
+import 'merchant_style.dart';
+
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+
 import '../services/geocoding_service.dart';
 
 Future<Map<String, dynamic>?> editRestaurant(
   BuildContext context, {
   Map<String, dynamic>? initial,
 }) async {
-  return showDialog<Map<String, dynamic>>(
+  return showMerchantDialog<Map<String, dynamic>>(
     context: context,
     barrierDismissible: false,
     builder: (context) => _RestaurantEditorDialog(initial: initial),
@@ -21,7 +26,8 @@ class _RestaurantEditorDialog extends StatefulWidget {
   final Map<String, dynamic>? initial;
 
   @override
-  State<_RestaurantEditorDialog> createState() => _RestaurantEditorDialogState();
+  State<_RestaurantEditorDialog> createState() =>
+      _RestaurantEditorDialogState();
 }
 
 class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
@@ -48,7 +54,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
     _phone = TextEditingController(text: init?['phone'] as String? ?? '');
     _address = TextEditingController(text: init?['address'] as String? ?? '');
     _city = TextEditingController(text: init?['city'] as String? ?? '');
-    _description = TextEditingController(text: init?['description'] as String? ?? '');
+    _description = TextEditingController(
+      text: init?['description'] as String? ?? '',
+    );
 
     _latitude = (init?['latitude'] as num?)?.toDouble();
     _longitude = (init?['longitude'] as num?)?.toDouble();
@@ -72,7 +80,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
 
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        throw Exception('Vui lòng bật dịch vụ Định vị/GPS trên thiết bị rồi thử lại.');
+        throw Exception(
+          'Vui lòng bật dịch vụ Định vị/GPS trên thiết bị rồi thử lại.',
+        );
       }
 
       var permission = await Geolocator.checkPermission();
@@ -83,7 +93,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Quyền vị trí bị từ chối vĩnh viễn. Vui lòng mở Cài đặt để cấp quyền.'),
+              content: Text(
+                'Quyền vị trí bị từ chối vĩnh viễn. Vui lòng mở Cài đặt để cấp quyền.',
+              ),
             ),
           );
         }
@@ -127,7 +139,10 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
       if (mounted) {
         final msg = e.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi định vị: $msg'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Lỗi định vị: $msg'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -178,7 +193,8 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
               uri,
               headers: {
                 'Accept': 'application/json',
-                'User-Agent': 'SoopiFood/1.0 (merchant restaurant address search)',
+                'User-Agent':
+                    'SoopiFood/1.0 (merchant restaurant address search)',
               },
             )
             .timeout(const Duration(seconds: 8));
@@ -187,8 +203,16 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
           final payload = jsonDecode(response.body) as Map<String, dynamic>;
           final features = payload['features'] as List<dynamic>? ?? [];
           final list = features
-              .map((item) => _AddressSuggestion.fromJson(item as Map<String, dynamic>))
-              .where((item) => item.displayName.isNotEmpty && item.latitude != 0 && item.longitude != 0)
+              .map(
+                (item) =>
+                    _AddressSuggestion.fromJson(item as Map<String, dynamic>),
+              )
+              .where(
+                (item) =>
+                    item.displayName.isNotEmpty &&
+                    item.latitude != 0 &&
+                    item.longitude != 0,
+              )
               .toList();
 
           if (mounted) {
@@ -243,7 +267,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
         final payload = jsonDecode(response.body) as Map<String, dynamic>;
         final features = payload['features'] as List<dynamic>? ?? [];
         if (features.isNotEmpty) {
-          final s = _AddressSuggestion.fromJson(features.first as Map<String, dynamic>);
+          final s = _AddressSuggestion.fromJson(
+            features.first as Map<String, dynamic>,
+          );
           if (s.latitude != 0 && s.longitude != 0) {
             _latitude = s.latitude;
             _longitude = s.longitude;
@@ -267,7 +293,7 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
 
     if (!hasCoords || _latitude == null || _longitude == null) {
       if (!mounted) return;
-      showDialog(
+      showMerchantDialog(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Cần tọa độ vị trí quán'),
@@ -304,7 +330,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
     final hasCoordinates = _latitude != null && _longitude != null;
 
     return AlertDialog(
-      title: Text(widget.initial == null ? 'Đăng ký quán ăn' : 'Thông tin quán'),
+      title: Text(
+        widget.initial == null ? 'Đăng ký quán ăn' : 'Thông tin quán',
+      ),
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(
@@ -322,8 +350,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                     labelText: 'Tên quán',
                     prefixIcon: Icon(Icons.storefront, color: Colors.orange),
                   ),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Vui lòng nhập tên quán.' : null,
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? 'Vui lòng nhập tên quán.'
+                      : null,
                 ),
                 const SizedBox(height: 8),
 
@@ -336,8 +365,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                     labelText: 'Số điện thoại',
                     prefixIcon: Icon(Icons.phone, color: Colors.orange),
                   ),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Vui lòng nhập số điện thoại.' : null,
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? 'Vui lòng nhập số điện thoại.'
+                      : null,
                 ),
                 const SizedBox(height: 8),
 
@@ -351,18 +381,26 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: MerchantStyle.primary,
+                            ),
                           )
                         : const Icon(Icons.my_location, color: Colors.orange),
                     label: Text(
                       _isLocatingGps
                           ? 'Đang lấy vị trí GPS...'
                           : 'Lấy vị trí GPS hiện tại của quán',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: MerchantStyle.primary,
+                      ),
                     ),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.orange),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      side: const BorderSide(color: MerchantStyle.primary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
@@ -374,17 +412,25 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: hasCoordinates ? Colors.green.shade50 : Colors.amber.shade50,
+                    color: hasCoordinates
+                        ? Colors.green.shade50
+                        : Colors.amber.shade50,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: hasCoordinates ? Colors.green.shade300 : Colors.amber.shade300,
+                      color: hasCoordinates
+                          ? Colors.green.shade300
+                          : Colors.amber.shade300,
                     ),
                   ),
                   child: Row(
                     children: [
                       Icon(
-                        hasCoordinates ? Icons.check_circle : Icons.info_outline,
-                        color: hasCoordinates ? Colors.green : Colors.amber.shade800,
+                        hasCoordinates
+                            ? Icons.check_circle
+                            : Icons.info_outline,
+                        color: hasCoordinates
+                            ? Colors.green
+                            : Colors.amber.shade800,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
@@ -395,7 +441,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                               : 'Chưa có tọa độ. Bấm nút GPS hoặc chọn gợi ý bản đồ để lưu vị trí thật.',
                           style: TextStyle(
                             fontSize: 12,
-                            color: hasCoordinates ? Colors.green.shade900 : Colors.amber.shade900,
+                            color: hasCoordinates
+                                ? Colors.green.shade900
+                                : Colors.amber.shade900,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -412,7 +460,10 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                   onChanged: _onAddressChanged,
                   decoration: InputDecoration(
                     labelText: 'Địa chỉ',
-                    prefixIcon: const Icon(Icons.location_on, color: Colors.orange),
+                    prefixIcon: const Icon(
+                      Icons.location_on,
+                      color: MerchantStyle.primary,
+                    ),
                     suffixIcon: _isSearchingAddress
                         ? const Padding(
                             padding: EdgeInsets.all(12),
@@ -424,8 +475,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                           )
                         : null,
                   ),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Vui lòng nhập địa chỉ.' : null,
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? 'Vui lòng nhập địa chỉ.'
+                      : null,
                 ),
 
                 // Danh sách gợi ý địa chỉ khi gõ
@@ -453,11 +505,21 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                         final s = _suggestions[idx];
                         return ListTile(
                           dense: true,
-                          leading: const Icon(Icons.pin_drop, color: Colors.orange, size: 20),
-                          title: Text(s.displayName, style: const TextStyle(fontSize: 12)),
+                          leading: const Icon(
+                            Icons.pin_drop,
+                            color: MerchantStyle.primary,
+                            size: 20,
+                          ),
+                          title: Text(
+                            s.displayName,
+                            style: const TextStyle(fontSize: 12),
+                          ),
                           subtitle: Text(
                             'Tọa độ: ${s.latitude.toStringAsFixed(4)}, ${s.longitude.toStringAsFixed(4)}',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
                           ),
                           onTap: () => _selectSuggestion(s),
                         );
@@ -473,8 +535,9 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
                     labelText: 'Thành phố / Tỉnh',
                     prefixIcon: Icon(Icons.location_city, color: Colors.orange),
                   ),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Vui lòng nhập thành phố.' : null,
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? 'Vui lòng nhập thành phố.'
+                      : null,
                 ),
                 const SizedBox(height: 8),
 
@@ -506,12 +569,15 @@ class _RestaurantEditorDialogState extends State<_RestaurantEditorDialog> {
         ),
         FilledButton(
           onPressed: _isSaving ? null : _submit,
-          style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+          style: FilledButton.styleFrom(backgroundColor: MerchantStyle.primary),
           child: _isSaving
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Text('Lưu'),
         ),
@@ -540,11 +606,17 @@ class _AddressSuggestion {
   factory _AddressSuggestion.fromJson(Map<String, dynamic> json) {
     final properties = json['properties'] as Map<String, dynamic>? ?? {};
     final coordinates =
-        (json['geometry'] as Map<String, dynamic>?)?['coordinates'] as List<dynamic>? ?? [];
+        (json['geometry'] as Map<String, dynamic>?)?['coordinates']
+            as List<dynamic>? ??
+        [];
     final houseNumber = properties['housenumber']?.toString() ?? '';
     final road = properties['street']?.toString() ?? '';
     final street = [houseNumber, road].where((p) => p.isNotEmpty).join(' ');
-    final district = properties['district'] ?? properties['county'] ?? properties['suburb'] ?? '';
+    final district =
+        properties['district'] ??
+        properties['county'] ??
+        properties['suburb'] ??
+        '';
     final city = properties['city'] ?? properties['state'] ?? '';
     final addressParts = <String>[
       properties['name']?.toString() ?? '',
@@ -555,8 +627,12 @@ class _AddressSuggestion {
     final displayName = addressParts.isNotEmpty
         ? addressParts.join(', ')
         : (properties['name']?.toString() ?? 'Địa chỉ');
-    final double lon = coordinates.isNotEmpty ? (coordinates[0] as num).toDouble() : 0.0;
-    final double lat = coordinates.length > 1 ? (coordinates[1] as num).toDouble() : 0.0;
+    final double lon = coordinates.isNotEmpty
+        ? (coordinates[0] as num).toDouble()
+        : 0.0;
+    final double lat = coordinates.length > 1
+        ? (coordinates[1] as num).toDouble()
+        : 0.0;
     return _AddressSuggestion(
       displayName: displayName,
       street: street,
