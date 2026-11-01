@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../auth_screen.dart';
 import '../services/auth_service.dart';
 import '../services/profile_api_service.dart';
+import '../services/shipper_earnings_service.dart';
 import 'shipper_home_screen.dart';
 import 'shipper_active_trip_screen.dart';
 import 'shipper_earnings_screen.dart';
@@ -29,6 +30,7 @@ class _ShipperMainScreenState extends State<ShipperMainScreen> {
       _activeTrip = null;
       _currentTab = 0; // Quay lại bản đồ nhận đơn
     });
+    ShipperEarningsService().init();
   }
 
   @override
@@ -51,8 +53,10 @@ class _ShipperMainScreenState extends State<ShipperMainScreen> {
             tooltip: 'Đăng xuất tài khoản',
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: () async {
-              ProfileApiService().clearCache();
-              await AuthService().signOut();
+              try {
+                ProfileApiService().clearCache();
+                await AuthService().signOut();
+              } catch (_) {}
               if (context.mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const AuthScreen()),
@@ -76,7 +80,12 @@ class _ShipperMainScreenState extends State<ShipperMainScreen> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentTab,
-        onTap: (index) => setState(() => _currentTab = index),
+        onTap: (index) {
+          setState(() => _currentTab = index);
+          if (index == 2) {
+            ShipperEarningsService().init();
+          }
+        },
         selectedItemColor: Colors.deepOrange,
         unselectedItemColor: Colors.grey,
         items: [

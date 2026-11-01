@@ -14,5 +14,9 @@ public sealed class Review : IEntity
     public byte RestaurantRating { get; set; }
     public byte? ShipperRating { get; set; }
     public string Comment { get; set; } = "";
+    public string ShipperComment { get; set; } = "";
+    public string RestaurantTags { get; set; } = "";
+    public string ShipperTags { get; set; } = "";
+    public int TipAmount { get; set; } = 0;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

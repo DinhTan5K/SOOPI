@@ -25,6 +25,18 @@ public sealed class CurrentAccount(SoopiDbContext db, IHttpContextAccessor acces
         if (string.IsNullOrWhiteSpace(uid)) throw new ManagementException(401, "Firebase UID is missing.");
         var account = await db.Users.SingleOrDefaultAsync(u => u.FirebaseUid == uid, ct);
         var adminEmails = config?.GetSection("AdminSettings:AdminEmails").Get<string[]>() ?? [];
+        var email = principal.FindFirstValue(ClaimTypes.Email) ?? principal.FindFirstValue("email");
+
+        if (account is null && !string.IsNullOrWhiteSpace(email))
+        {
+            account = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower(), ct);
+            if (account is not null)
+            {
+                account.FirebaseUid = uid;
+                account.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
+        }
 
         if (account is not null)
         {
@@ -38,7 +50,6 @@ public sealed class CurrentAccount(SoopiDbContext db, IHttpContextAccessor acces
 
         if (account is null && create)
         {
-            var email = principal.FindFirstValue(ClaimTypes.Email) ?? principal.FindFirstValue("email");
             if (string.IsNullOrWhiteSpace(email)) throw new ManagementException(400, "An email identity is required.");
             var isAdmin = adminEmails.Any(e => string.Equals(e, email, StringComparison.OrdinalIgnoreCase));
             account = new AppUser { Id = Guid.NewGuid(), FirebaseUid = uid, Email = email,

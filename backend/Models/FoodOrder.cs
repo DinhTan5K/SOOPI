@@ -24,6 +24,7 @@ public sealed class FoodOrder : IEntity
     public string Note { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public Review? Review { get; set; }
     public ICollection<OrderItem> Items { get; set; } = [];
     public ICollection<OrderStatusHistory> StatusHistory { get; set; } = [];
     public ICollection<DeliveryLocation> DeliveryLocations { get; set; } = [];

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api_config.dart';
 import '../services/order_socket_service.dart';
 import '../services/profile_api_service.dart';
+import '../services/shipper_earnings_service.dart';
 
 enum TripStep {
   goingToShop,
@@ -57,13 +58,13 @@ class _ShipperActiveTripScreenState extends State<ShipperActiveTripScreen> {
 
     setState(() => _isLoading = true);
     try {
-      String driverId = 'd16e5d6a-903e-40fa-8b01-cf146ecd55ac';
-      try {
-        final profile = await ProfileApiService().getProfile();
-        if (profile.id.isNotEmpty) {
+      String driverId = ProfileApiService().cachedProfile?.id ?? '';
+      if (driverId.isEmpty) {
+        try {
+          final profile = await ProfileApiService().getProfile();
           driverId = profile.id;
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       // 1. Cập nhật trực tiếp qua SignalR Hub (Real-time đồng bộ cả 3 bên)
       bool success = await OrderSocketService().driverUpdateOrderStatus(
@@ -95,6 +96,21 @@ class _ShipperActiveTripScreenState extends State<ShipperActiveTripScreen> {
           setState(() => _currentStep = TripStep.deliveringToCustomer);
         } else if (status == 'Delivered') {
           setState(() => _currentStep = TripStep.completed);
+
+          // Ghi nhận ngay cuốc xe vừa hoàn thành vào Thu nhập của tài xế
+          final fee = (_tripData?['deliveryFee'] as num?)?.toInt() ?? 16000;
+          final oCode = _tripData?['orderCode']?.toString() ?? orderId;
+          final rName = _tripData?['restaurantName']?.toString() ?? 'Nhà hàng';
+          final dAddr = _tripData?['deliveryAddress']?.toString() ?? 'Địa chỉ khách hàng';
+
+          ShipperEarningsService().recordCompletedTrip(
+            orderId: orderId,
+            orderCode: oCode,
+            restaurantName: rName,
+            deliveryAddress: dAddr,
+            deliveryFee: fee,
+          );
+
           _showCompletionDialog();
         }
       } else if (mounted) {

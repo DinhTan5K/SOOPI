@@ -187,6 +187,7 @@ public sealed class OrderRepository(SoopiDbContext db) : IOrderRepository
                 .Take(1))
             .Include(order => order.Restaurant)
             .Include(order => order.Shipper)
+            .Include(order => order.Review)
             .FirstOrDefaultAsync(
                 order => order.Id == id && order.CustomerId == userId,
                 ct);
@@ -196,10 +197,8 @@ public sealed class OrderRepository(SoopiDbContext db) : IOrderRepository
             .Include(order => order.Items)
             .Include(order => order.Restaurant)
             .Include(order => order.Shipper)
+            .Include(order => order.Review)
             .Where(order => order.CustomerId == userId)
-            .Include(order => order.Items)
-            .Include(order => order.Restaurant)
-            .Include(order => order.Shipper)
             .OrderByDescending(order => order.CreatedAt)
             .AsNoTracking()
             .ToListAsync(ct);

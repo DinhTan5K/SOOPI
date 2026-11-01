@@ -53,16 +53,29 @@ class _OrderListScreenState extends State<OrderListScreen>
     super.dispose();
   }
 
-  void _onReorder(OrderModel order) {
-    final newOrder = _orderData.reorder(order);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã mua lại đơn #${newOrder.id} thành công!'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-    _tabController.animateTo(0);
+  Future<void> _onReorder(OrderModel order) async {
+    try {
+      final newOrder = await _orderData.reorder(order);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã mua lại đơn #${newOrder.orderCode ?? newOrder.id} thành công!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        _tabController.animateTo(0);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Không thể đặt lại đơn hàng: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   String _formatDate(DateTime dt) {

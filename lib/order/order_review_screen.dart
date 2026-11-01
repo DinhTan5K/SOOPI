@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'order_data.dart';
+import '../services/shipper_earnings_service.dart';
+import '../services/restaurant_review_service.dart';
+import '../services/profile_api_service.dart';
 
 class OrderReviewScreen extends StatefulWidget {
   final OrderModel order;
@@ -46,7 +49,12 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
     super.dispose();
   }
 
-  void _submitReview() {
+  bool _isSubmitting = false;
+
+  Future<void> _submitReview() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+
     final review = ReviewModel(
       restaurantRating: _restaurantRating,
       restaurantTags: _selectedRestaurantTags.toList(),
@@ -60,15 +68,52 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
 
     OrderData().submitReview(widget.order.id, review);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Cảm ơn bạn đã đánh giá đơn hàng!'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
-      ),
+    final dishes = widget.order.items.map((i) => i.name).toList();
+    final profile = ProfileApiService().cachedProfile;
+    final customerName = (profile != null && profile.fullName.isNotEmpty) ? profile.fullName : 'Khách hàng SOOPI';
+    final customerAvatar = profile?.avatarUrl ?? '';
+
+    // Ghi nhận ngay đánh giá của khách hàng vào trang Quán ăn để hiển thị bình luận
+    await RestaurantReviewService().addReview(
+      orderId: widget.order.backendId ?? widget.order.id,
+      restaurantId: widget.order.restaurantId ?? '',
+      restaurantName: widget.order.restaurantName,
+      customerName: customerName,
+      customerAvatar: customerAvatar,
+      rating: _restaurantRating,
+      tags: _selectedRestaurantTags.toList(),
+      comment: _restaurantCommentController.text.trim(),
+      dishNames: dishes,
     );
 
-    Navigator.pop(context);
+    // Ghi nhận ngay đánh giá của khách hàng vào tài khoản tài xế
+    final shipperComment = _shipperCommentController.text.trim().isNotEmpty
+        ? _shipperCommentController.text.trim()
+        : _restaurantCommentController.text.trim();
+    final shipperTags = _selectedShipperTags.isNotEmpty
+        ? _selectedShipperTags.toList()
+        : _selectedRestaurantTags.toList();
+
+    await ShipperEarningsService().recordCustomerReview(
+      orderId: widget.order.backendId ?? widget.order.id,
+      orderCode: widget.order.orderCode ?? widget.order.id,
+      restaurantName: widget.order.restaurantName,
+      rating: _shipperRating,
+      comment: shipperComment,
+      tipAmount: _tipAmount,
+      tags: shipperTags,
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cảm ơn bạn đã đánh giá đơn hàng!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -90,13 +135,11 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
 
             const SizedBox(height: 20),
 
-            if (widget.order.shipper != null) ...[
-              _buildShipperSection(),
-              const SizedBox(height: 24),
-            ],
+            _buildShipperSection(),
+            const SizedBox(height: 24),
 
             ElevatedButton(
-              onPressed: _submitReview,
+              onPressed: _isSubmitting ? null : _submitReview,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange,
                 foregroundColor: Colors.white,
@@ -104,10 +147,16 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
-              child: const Text(
-                'Gửi đánh giá',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                    )
+                  : const Text(
+                      'Gửi đánh giá',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
             ),
             const SizedBox(height: 20),
           ],
@@ -239,7 +288,15 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
   }
 
   Widget _buildShipperSection() {
-    final shipper = widget.order.shipper!;
+    final shipper = widget.order.shipper;
+    final shipperName = (shipper != null && shipper.name.isNotEmpty) ? shipper.name : 'Tài xế giao hàng SOOPI';
+    final shipperAvatar = (shipper != null && shipper.avatarUrl.isNotEmpty)
+        ? shipper.avatarUrl
+        : 'https://ui-avatars.com/api/?name=Shipper&background=FF8A00&color=fff';
+    final shipperInfoText = (shipper != null && shipper.bikePlate.isNotEmpty)
+        ? '${shipper.bikeType} • ${shipper.bikePlate}'
+        : 'Đối tác giao nhận đơn #${widget.order.orderCode ?? widget.order.id}';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -259,15 +316,15 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
         children: [
           Row(
             children: [
-              CircleAvatar(radius: 22, backgroundImage: NetworkImage(shipper.avatarUrl)),
+              CircleAvatar(radius: 22, backgroundImage: NetworkImage(shipperAvatar)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Đánh giá Tài xế (Shipper)', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    Text(shipper.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text('${shipper.bikeType} • ${shipper.bikePlate}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text(shipperName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(shipperInfoText, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                 ),
               ),

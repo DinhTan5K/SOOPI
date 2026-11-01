@@ -24,11 +24,35 @@ namespace Soopi.Backend.Services
                 .Include(u => u.Addresses)
                 .FirstOrDefaultAsync(u => u.FirebaseUid == firebaseUid);
 
+            // Nếu chưa tìm thấy theo FirebaseUid, tìm theo Email để liên kết tài khoản đã tồn tại trong DB (giữ nguyên Role từ DB)
+            if (user == null && !string.IsNullOrWhiteSpace(email))
+            {
+                user = await _db.Users
+                    .Include(u => u.Addresses)
+                    .FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
+
+                if (user != null)
+                {
+                    user.FirebaseUid = firebaseUid;
+                    if (!string.IsNullOrEmpty(photoUrl) && string.IsNullOrEmpty(user.AvatarUrl))
+                    {
+                        user.AvatarUrl = photoUrl;
+                    }
+                    if (!string.IsNullOrEmpty(displayName) && (string.IsNullOrEmpty(user.FullName) || user.FullName == email.Split('@')[0]))
+                    {
+                        user.FullName = displayName;
+                    }
+                    user.UpdatedAt = DateTimeOffset.UtcNow;
+                    await _db.SaveChangesAsync();
+                    _logger.LogInformation("Đã liên kết FirebaseUid {Uid} cho tài khoản {Email} (Role từ DB: {Role})", firebaseUid, email, user.Role);
+                }
+            }
+
             var adminEmails = _config?.GetSection("AdminSettings:AdminEmails").Get<string[]>() ?? [];
+            var isAdmin = adminEmails.Any(e => string.Equals(e, email, StringComparison.OrdinalIgnoreCase));
 
             if (user == null)
             {
-                var isAdmin = adminEmails.Any(e => string.Equals(e, email, StringComparison.OrdinalIgnoreCase));
                 user = new AppUser
                 {
                     Id = Guid.NewGuid(),
@@ -44,7 +68,7 @@ namespace Soopi.Backend.Services
                 await _db.SaveChangesAsync();
                 _logger.LogInformation("Đã tự động tạo hồ sơ người dùng mới trong DB cho UID: {Uid}", firebaseUid);
             }
-            else if (adminEmails.Any(e => string.Equals(e, user.Email, StringComparison.OrdinalIgnoreCase)) && user.Role != "Admin")
+            else if (isAdmin && user.Role != "Admin")
             {
                 user.Role = "Admin";
                 user.UpdatedAt = DateTimeOffset.UtcNow;

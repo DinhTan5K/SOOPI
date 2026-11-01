@@ -4,6 +4,8 @@ import '../services/order_socket_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/profile_api_service.dart';
+import '../services/auth_service.dart';
+import '../auth_screen.dart';
 
 import 'merchant_data.dart';
 import 'menu_editor.dart';
@@ -465,30 +467,18 @@ class _MerchantScreenState extends State<MerchantScreen> {
           ],
           IconButton(
             tooltip: 'Đăng xuất',
-            onPressed: _saving
-                ? null
-                : () async {
-                    if (await _confirmLeave() && mounted) {
-                      if (_data.remote) {
-                        try {
-                          await FirebaseAuth.instance.signOut();
-                          ProfileApiService().clearCache();
-                        } catch (error) {
-                          if (mounted) _message(error.toString());
-                          return;
-                        }
-                        if (!mounted) return;
-                      }
-                      setState(() => _dirty = false);
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (!mounted) return;
-                        Navigator.of(context).pushNamedAndRemoveUntil(
-                          '/login',
-                          (route) => false,
-                        );
-                      });
-                    }
-                  },
+            onPressed: () async {
+              try {
+                ProfileApiService().clearCache();
+                await AuthService().signOut();
+              } catch (_) {}
+              if (mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const AuthScreen()),
+                  (route) => false,
+                );
+              }
+            },
             icon: const Icon(Icons.logout),
           ),
         ],

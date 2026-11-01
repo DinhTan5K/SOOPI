@@ -178,4 +178,22 @@ public sealed class OrdersController(
         var ok = await orders.DriverUpdateOrderStatusAsync(orderId, driverId, input.Status, ct);
         return ok ? Ok(new { success = true, status = input.Status }) : NotFound();
     }
+
+    [HttpGet("/api/shipper/dashboard")]
+    [HttpGet("/api/shippers/dashboard")]
+    [HttpGet("/api/orders/delivered")]
+    public async Task<IActionResult> GetShipperDashboard(CancellationToken ct) =>
+        Ok(await reviews.GetShipperDashboard(Guid.Empty, ct));
+
+    [HttpGet("shipper-dashboard")]
+    public async Task<IActionResult> ShipperDashboard(
+        Guid userId,
+        CancellationToken ct) =>
+        Ok(await reviews.GetShipperDashboard(userId, ct));
+
+    [HttpGet("/api/shippers/{shipperId:guid}/dashboard")]
+    public async Task<IActionResult> ShipperDashboardDirect(
+        Guid shipperId,
+        CancellationToken ct) =>
+        Ok(await reviews.GetShipperDashboard(shipperId, ct));
 }

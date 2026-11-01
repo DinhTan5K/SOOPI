@@ -86,29 +86,6 @@ class _ShipperChatScreenState extends State<ShipperChatScreen> {
     } catch (e) {
       debugPrint('Lỗi tải lịch sử chat: $e');
     }
-
-    // Nếu chưa từng có tin nhắn lưu trong máy, tạo tin nhắn mở đầu từ tài xế
-    if (mounted) {
-      setState(() {
-        _messages.clear();
-        _messages.add(
-          ChatMessage(
-            text: 'Chào bạn! Tôi là ${widget.shipper.name}, tài xế nhận giao đơn #${widget.order.id}.',
-            isMe: false,
-            timestamp: DateTime.now().subtract(const Duration(minutes: 3)),
-          ),
-        );
-        _messages.add(
-          ChatMessage(
-            text: 'Tôi đang di chuyển đến quán lấy món. Bạn có dặn dò gì thêm cứ nhắn cho tôi nhé!',
-            isMe: false,
-            timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
-          ),
-        );
-      });
-      _saveMessagesToPrefs();
-      _scrollToBottom();
-    }
   }
 
   Future<void> _saveMessagesToPrefs() async {
@@ -209,40 +186,6 @@ class _ShipperChatScreenState extends State<ShipperChatScreen> {
     });
     _saveMessagesToPrefs();
     _scrollToBottom();
-
-    // Mô phỏng tài xế phản hồi tự động sau 1.2s
-    Timer(const Duration(milliseconds: 1200), () {
-      if (!mounted) return;
-
-      String reply;
-      final lower = content.toLowerCase();
-
-      if (lower.contains('gọi') || lower.contains('đến') || lower.contains('tới')) {
-        reply = 'Dạ vâng bạn yên tâm, khi tới nơi tôi sẽ gọi điện báo bạn ngay ạ!';
-      } else if (lower.contains('đũa') || lower.contains('thìa') || lower.contains('muỗng')) {
-        reply = 'Dạ tôi đã dặn quán bỏ thêm đũa thìa đầy đủ cho bạn rồi nhé!';
-      } else if (lower.contains('ớt') || lower.contains('tương') || lower.contains('nước sốt')) {
-        reply = 'Dạ vâng, tôi đã xin thêm tương ớt và gia vị cho bạn rồi ạ.';
-      } else if (lower.contains('cửa') || lower.contains('cổng') || lower.contains('bảo vệ')) {
-        reply = 'Dạ tôi nhớ rồi, tôi sẽ giao đúng chỗ bạn dặn.';
-      } else if (lower.contains('cẩn thận') || lower.contains('cảm ơn') || lower.contains('cam on')) {
-        reply = 'Cảm ơn bạn nhiều nhé! Tôi đang giao tới đây ạ.';
-      } else {
-        reply = 'Dạ vâng tôi đã nhận được tin nhắn! Tôi đang trên đường giao đơn #${widget.order.id} tới bạn.';
-      }
-
-      setState(() {
-        _messages.add(
-          ChatMessage(
-            text: reply,
-            isMe: false,
-            timestamp: DateTime.now(),
-          ),
-        );
-      });
-      _saveMessagesToPrefs();
-      _scrollToBottom();
-    });
   }
 
   @override
@@ -374,15 +317,39 @@ class _ShipperChatScreenState extends State<ShipperChatScreen> {
 
             // Danh sách tin nhắn
             Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(16),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  final msg = _messages[index];
-                  return _buildMessageBubble(msg);
-                },
-              ),
+              child: _messages.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey.shade400),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Chưa có tin nhắn nào',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Gửi tin nhắn hoặc gọi điện trực tiếp nếu có dặn dò cho tài xế.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final msg = _messages[index];
+                        return _buildMessageBubble(msg);
+                      },
+                    ),
             ),
 
             // Danh sách tin nhắn nhanh (Quick Replies)

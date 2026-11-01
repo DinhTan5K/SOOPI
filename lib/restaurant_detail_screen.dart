@@ -13,6 +13,7 @@ import 'package:geolocator/geolocator.dart';
 import 'order/order_data.dart' as order_data;
 import 'order/order_tracking_screen.dart';
 import 'services/order_api_service.dart';
+import 'services/restaurant_review_service.dart';
 
 class RestaurantDetailScreen extends StatefulWidget {
   final ApiRestaurant restaurant;
@@ -48,6 +49,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
   double? _deliveryLat;
   double? _deliveryLng;
   List<Map<String, dynamic>> _fetchedVouchers = [];
+  List<RestaurantReviewItem> _restaurantReviews = [];
+  bool _isLoadingReviews = true;
 
   @override
   void initState() {
@@ -58,6 +61,57 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
     _deliveryLng = widget.userLng;
     _loadSavedAddressFallback();
     _loadRestaurantVouchers();
+    _loadRestaurantReviews();
+  }
+
+  Future<void> _loadRestaurantReviews() async {
+    setState(() => _isLoadingReviews = true);
+    try {
+      final reviews = await RestaurantReviewService().getReviews(
+        restaurantId: widget.restaurant.id,
+        restaurantName: widget.restaurant.name,
+      );
+
+      // Quét thêm từ các đơn hàng đã đặt của quán này trong OrderData
+      final allOrders = order_data.OrderData().orders;
+      for (final o in allOrders) {
+        if (o.review != null && o.review!.restaurantRating > 0) {
+          final isSameShop = (o.restaurantId != null && o.restaurantId == widget.restaurant.id) ||
+              RestaurantReviewService.isNameMatch(o.restaurantName, widget.restaurant.name);
+          if (isSameShop) {
+            final orderId = o.backendId ?? o.id;
+            if (!reviews.any((r) => r.orderId == orderId)) {
+              reviews.add(
+                RestaurantReviewItem(
+                  id: 'ord_rev_$orderId',
+                  orderId: orderId,
+                  restaurantId: widget.restaurant.id,
+                  restaurantName: widget.restaurant.name,
+                  customerName: 'Khách hàng SOOPI',
+                  rating: o.review!.restaurantRating,
+                  tags: o.review!.restaurantTags,
+                  comment: o.review!.restaurantComment,
+                  dishNames: o.items.map((i) => i.name).toList(),
+                  createdAt: o.review!.createdAt,
+                ),
+              );
+            }
+          }
+        }
+      }
+
+      reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      if (mounted) {
+        setState(() {
+          _restaurantReviews = reviews;
+          _isLoadingReviews = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[RestaurantDetailScreen] Lỗi tải đánh giá quán: $e');
+      if (mounted) setState(() => _isLoadingReviews = false);
+    }
   }
 
   Future<void> _loadRestaurantVouchers() async {
@@ -827,21 +881,36 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
                       children: [
                         const Icon(Icons.star, color: Colors.amber, size: 16),
                         const SizedBox(width: 2),
-                        Text(
-                          res.averageRating > 0
-                              ? res.averageRating.toStringAsFixed(1)
-                              : 'Mới',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        Text(
-                          res.reviewCount > 0
-                              ? ' (${res.reviewCount}+ Đánh giá)'
-                              : ' (Chưa có đánh giá)',
-                          style: const TextStyle(
-                              color: Colors.grey, fontSize: 13),
+                        Builder(
+                          builder: (context) {
+                            final totalRevs = _restaurantReviews.length;
+                            final hasRevs = totalRevs > 0;
+                            final score = hasRevs
+                                ? (_restaurantReviews.fold<int>(0, (s, r) => s + r.rating) / totalRevs)
+                                : res.averageRating;
+                            return Row(
+                              children: [
+                                Text(
+                                  hasRevs
+                                      ? score.toStringAsFixed(1)
+                                      : (res.averageRating > 0 ? res.averageRating.toStringAsFixed(1) : 'Mới'),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                Text(
+                                  hasRevs
+                                      ? ' ($totalRevs Đánh giá)'
+                                      : (res.reviewCount > 0
+                                          ? ' (${res.reviewCount}+ Đánh giá)'
+                                          : ' (Chưa có đánh giá)'),
+                                  style: const TextStyle(
+                                      color: Colors.grey, fontSize: 13),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                         const SizedBox(width: 8),
                         const Text('•', style: TextStyle(color: Colors.grey)),
@@ -1279,83 +1348,245 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
 
   // --- TAB ĐÁNH GIÁ CỦA KHÁCH HÀNG ---
   Widget _buildReviewsTab() {
-    final reviewCount = widget.restaurant.reviewCount;
-    final rating = widget.restaurant.averageRating;
+    final totalReviews = _restaurantReviews.length;
+    double effectiveRating = widget.restaurant.averageRating;
+    if (totalReviews > 0) {
+      final sum = _restaurantReviews.fold<int>(0, (prev, r) => prev + r.rating);
+      effectiveRating = sum / totalReviews;
+    } else if (effectiveRating <= 0) {
+      effectiveRating = 5.0;
+    }
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              Column(
-                children: [
-                  Text(
-                    rating > 0 ? rating.toStringAsFixed(1) : '5.0',
-                    style: const TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.orange,
+    final starCounts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
+    for (final r in _restaurantReviews) {
+      final s = r.rating.clamp(1, 5);
+      starCounts[s] = (starCounts[s] ?? 0) + 1;
+    }
+
+    double percentOf(int star) =>
+        totalReviews > 0 ? ((starCounts[star] ?? 0) / totalReviews) : 0.0;
+
+    return RefreshIndicator(
+      onRefresh: _loadRestaurantReviews,
+      color: Colors.orange,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Column(
+                  children: [
+                    Text(
+                      effectiveRating.toStringAsFixed(1),
+                      style: const TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange,
+                      ),
                     ),
-                  ),
-                  const Row(
+                    Row(
+                      children: List.generate(
+                        5,
+                        (i) => Icon(
+                          i < effectiveRating.round() ? Icons.star : Icons.star_border,
+                          color: Colors.amber,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      totalReviews > 0
+                          ? '$totalReviews đánh giá'
+                          : (widget.restaurant.reviewCount > 0
+                              ? '${widget.restaurant.reviewCount}+ đánh giá'
+                              : 'Chưa có đánh giá'),
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 24),
+                Expanded(
+                  child: Column(
                     children: [
-                      Icon(Icons.star, color: Colors.amber, size: 16),
-                      Icon(Icons.star, color: Colors.amber, size: 16),
-                      Icon(Icons.star, color: Colors.amber, size: 16),
-                      Icon(Icons.star, color: Colors.amber, size: 16),
-                      Icon(Icons.star, color: Colors.amber, size: 16),
+                      _buildRatingBar('5 ⭐', percentOf(5)),
+                      _buildRatingBar('4 ⭐', percentOf(4)),
+                      _buildRatingBar('3 ⭐', percentOf(3)),
+                      _buildRatingBar('2 ⭐', percentOf(2)),
+                      _buildRatingBar('1 ⭐', percentOf(1)),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    reviewCount > 0
-                        ? '$reviewCount+ đánh giá'
-                        : 'Chưa có đánh giá',
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Đánh giá & Bình luận ($totalReviews)',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(width: 24),
-              Expanded(
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 20, color: Colors.orange),
+                onPressed: _loadRestaurantReviews,
+                tooltip: 'Làm mới đánh giá',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          if (_isLoadingReviews)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 30),
+              child: Center(child: CircularProgressIndicator(color: Colors.orange)),
+            )
+          else if (_restaurantReviews.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
                 child: Column(
                   children: [
-                    _buildRatingBar('5 ⭐', reviewCount > 0 ? 0.85 : 0.0),
-                    _buildRatingBar('4 ⭐', reviewCount > 0 ? 0.10 : 0.0),
-                    _buildRatingBar('3 ⭐', reviewCount > 0 ? 0.03 : 0.0),
-                    _buildRatingBar('2 ⭐', reviewCount > 0 ? 0.01 : 0.0),
-                    _buildRatingBar('1 ⭐', reviewCount > 0 ? 0.01 : 0.0),
+                    Icon(Icons.rate_review_outlined, size: 40, color: Colors.grey.shade400),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Cửa hàng này chưa có bình luận nào từ khách hàng.',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                    ),
                   ],
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _restaurantReviews.length,
+              separatorBuilder: (_, _) => const Divider(height: 24),
+              itemBuilder: (context, index) {
+                final r = _restaurantReviews[index];
+                return _buildReviewItemCard(r);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewItemCard(RestaurantReviewItem r) {
+    final avatarLetter = r.customerName.isNotEmpty ? r.customerName[0].toUpperCase() : 'K';
+    final dateStr = '${r.createdAt.day.toString().padLeft(2, '0')}/${r.createdAt.month.toString().padLeft(2, '0')}/${r.createdAt.year}';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.orange.shade100,
+                backgroundImage: (r.customerAvatar.isNotEmpty && r.customerAvatar.startsWith('http'))
+                    ? NetworkImage(r.customerAvatar)
+                    : null,
+                child: (r.customerAvatar.isEmpty || !r.customerAvatar.startsWith('http'))
+                    ? Text(avatarLetter, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange))
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.customerName,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    Text(
+                      dateStr,
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: List.generate(
+                  5,
+                  (starIdx) => Icon(
+                    starIdx < r.rating ? Icons.star : Icons.star_border,
+                    color: Colors.amber,
+                    size: 16,
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 16),
-
-        const Text(
-          'Đánh giá gần đây',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Center(
-            child: Text(
-              reviewCount == 0
-                  ? 'Cửa hàng này chưa có đánh giá nào từ khách hàng.'
-                  : 'Chưa có bình luận chi tiết nào cho cửa hàng này.',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+          if (r.tags.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: r.tags.map((t) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Text(
+                  t,
+                  style: TextStyle(fontSize: 11, color: Colors.orange.shade900, fontWeight: FontWeight.w500),
+                ),
+              )).toList(),
             ),
-          ),
-        ),
-      ],
+          ],
+          if (r.comment.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              r.comment,
+              style: const TextStyle(fontSize: 14, height: 1.4, color: Colors.black87, fontWeight: FontWeight.w500),
+            ),
+          ],
+          if (r.dishNames.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.restaurant_menu, size: 14, color: Colors.grey.shade500),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Món đã đặt: ${r.dishNames.join(', ')}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 

@@ -75,8 +75,15 @@ class AuthService {
 
   Future<void> signOut() async {
     try {
-      await GoogleSignIn.instance.signOut();
+      await _auth.signOut();
+    } catch (e) {
+      debugPrint('[AuthService] Lỗi Firebase signOut: $e');
+    }
+
+    try {
+      await GoogleSignIn.instance
+          .signOut()
+          .timeout(const Duration(milliseconds: 1000), onTimeout: () => null);
     } catch (_) {}
-    await _auth.signOut();
   }
 }

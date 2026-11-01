@@ -257,9 +257,25 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
         return;
       }
 
-      try {
-        await ProfileApiService().getProfile();
-      } catch (_) {}
+      ProfileApiService().clearCache();
+      final profile = await ProfileApiService().getProfile();
+      final role = profile.role.trim().toLowerCase();
+
+      if (role == 'owner' || role == 'restaurantowner') {
+        await _authService.signOut();
+        ProfileApiService().clearCache();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Tài khoản này là Chủ quán (Owner), không có quyền truy cập giao diện Khách hàng. Vui lòng bấm "Đối tác Chủ quán" để đăng nhập!',
+              ),
+              backgroundColor: Colors.red.shade700,
+            ),
+          );
+        }
+        return;
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -268,9 +284,19 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             backgroundColor: Colors.green,
           ),
         );
+
+        Widget targetScreen;
+        if (role == 'admin') {
+          targetScreen = const AdminMainScreen();
+        } else if (role == 'shipper') {
+          targetScreen = const ShipperMainScreen();
+        } else {
+          targetScreen = const HomeScreen();
+        }
+
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          MaterialPageRoute(builder: (context) => targetScreen),
         );
       }
     } on FirebaseAuthException catch (e) {
@@ -733,29 +759,11 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
 
                               const SizedBox(height: 20),
 
-                              // Nút Đăng nhập Mạng xã hội hiện đại
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildSocialPill(
-                                      label: 'Google',
-                                      iconWidget: _buildGoogleGIcon(),
-                                      onTap: _isLoading ? null : () => _handleGoogleSignIn(),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: _buildSocialPill(
-                                      label: 'Facebook',
-                                      iconWidget: const Icon(Icons.facebook, color: Color(0xFF1877F2), size: 24),
-                                      onTap: () {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Tính năng Facebook Sign-In đang được kết nối.')),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
+                              // Nút Đăng nhập Google
+                              _buildSocialPill(
+                                label: 'Tiếp tục với Google',
+                                iconWidget: _buildGoogleGIcon(),
+                                onTap: _isLoading ? null : () => _handleGoogleSignIn(),
                               ),
 
                               const SizedBox(height: 24),

@@ -233,33 +233,7 @@ class MerchantData {
   static const _channel = MethodChannel('soopi/merchant_storage');
   bool acceptingOrders = true;
   List<OpeningDay> hours = List.generate(7, (_) => OpeningDay());
-  List<MenuItem> items = [
-    MenuItem(
-      id: 'burger',
-      name: 'Double Cheese Burger',
-      price: 65000,
-      description: 'Bò nướng, phô mai và rau tươi.',
-    ),
-    MenuItem(
-      id: 'pizza',
-      name: 'Pepperoni Pizza',
-      price: 120000,
-      description: 'Pizza xúc xích với phô mai mozzarella.',
-    ),
-    MenuItem(
-      id: 'fries',
-      name: 'Khoai tây chiên',
-      price: 30000,
-      category: 'Ăn nhẹ',
-    ),
-    MenuItem(
-      id: 'tea',
-      name: 'Trà đào cam sả',
-      price: 35000,
-      category: 'Đồ uống',
-      available: false,
-    ),
-  ];
+  List<MenuItem> items = [];
   bool get supportsStorage =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
   Future<void> load() async {

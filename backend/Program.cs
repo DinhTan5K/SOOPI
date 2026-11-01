@@ -180,6 +180,27 @@ using (var scope = app.Services.CreateScope())
             app.Logger.LogWarning("Lỗi chạy migration Coupons: {Message}", exMigration.Message);
         }
 
+        // Migration: Đảm bảo bảng Reviews có đầy đủ cột ShipperComment, RestaurantTags, ShipperTags, TipAmount và đồng bộ ReviewCount
+        try
+        {
+            var reviewMigrationSql = """
+                ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS "ShipperComment" varchar(2000) NOT NULL DEFAULT '';
+                ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS "RestaurantTags" varchar(1000) NOT NULL DEFAULT '';
+                ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS "ShipperTags" varchar(1000) NOT NULL DEFAULT '';
+                ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS "TipAmount" integer NOT NULL DEFAULT 0;
+                UPDATE "Reviews" SET "ShipperComment" = "Comment" WHERE "ShipperComment" = '' AND "Comment" <> '';
+                UPDATE "Reviews" SET "ShipperRating" = "RestaurantRating" WHERE "ShipperRating" IS NULL;
+                UPDATE "Reviews" rv SET "ShipperId" = o."ShipperId" FROM "Orders" o WHERE rv."OrderId" = o."Id" AND rv."ShipperId" IS NULL AND o."ShipperId" IS NOT NULL;
+                UPDATE "Restaurants" r SET "ReviewCount" = (SELECT COUNT(*) FROM "Reviews" rv WHERE rv."RestaurantId" = r."Id");
+            """;
+            dbContext.Database.ExecuteSqlRaw(reviewMigrationSql);
+            app.Logger.LogInformation("Đã nâng cấp cấu trúc bảng Reviews và đồng bộ ReviewCount.");
+        }
+        catch (Exception exReviewMigration)
+        {
+            app.Logger.LogWarning("Lỗi chạy migration Reviews: {Message}", exReviewMigration.Message);
+        }
+
         // Tự động kiểm tra và đồng bộ Admin từ appsettings.json
         try
         {

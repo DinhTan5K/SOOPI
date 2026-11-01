@@ -215,6 +215,11 @@ public sealed class SoopiDbContext(
     {
         modelBuilder.Entity<Review>().HasIndex(review => review.OrderId).IsUnique();
         modelBuilder.Entity<Review>()
+            .HasOne(review => review.Order)
+            .WithOne(order => order.Review)
+            .HasForeignKey<Review>(review => review.OrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Review>()
             .HasOne(review => review.Customer)
             .WithMany()
             .HasForeignKey(review => review.CustomerId)

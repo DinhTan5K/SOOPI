@@ -83,7 +83,8 @@ class ProfileApiService {
     if (cachedRole != null && cachedRole.isNotEmpty) {
       return cachedRole;
     }
-    return _localProfileCache?.role ?? 'Customer';
+    final initial = getInitialProfile();
+    return _localProfileCache?.role ?? initial.role;
   }
 
   /// Lấy Firebase ID Token để đính kèm vào Header Authorization
@@ -142,8 +143,9 @@ class ProfileApiService {
 
     // Fallback: Sử dụng dữ liệu Firebase hoặc cache hiện tại
     final savedRole = await getCachedUserRole();
-    _localProfileCache ??= getInitialProfile().copyWith(
-      role: (savedRole != null && savedRole.isNotEmpty) ? savedRole : 'Customer',
+    final initial = getInitialProfile();
+    _localProfileCache ??= initial.copyWith(
+      role: (savedRole != null && savedRole.isNotEmpty) ? savedRole : initial.role,
     );
     return _localProfileCache!;
   }

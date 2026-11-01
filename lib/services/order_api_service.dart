@@ -38,11 +38,12 @@ class OrderApiService {
     try {
       final profile = await _profileService.getProfile();
       if (_isValidGuid(profile.id)) return profile.id;
+      if (profile.id.isNotEmpty) return profile.id;
     } catch (_) {}
     final initial = _profileService.getInitialProfile();
     if (_isValidGuid(initial.id)) return initial.id;
-    // Fallback default ID đảm bảo luôn đồng bộ đơn và voucher vào PostgreSQL
-    return '11111111-0000-0000-0000-000000000001';
+    if (initial.id.isNotEmpty) return initial.id;
+    return null;
   }
 
   Future<http.Response> _safeGet(String path, Map<String, String> headers, {Duration timeout = const Duration(seconds: 4)}) async {
@@ -203,6 +204,10 @@ class OrderApiService {
     required int restaurantRating,
     int? shipperRating,
     required String comment,
+    String shipperComment = '',
+    List<String> restaurantTags = const [],
+    List<String> shipperTags = const [],
+    int tipAmount = 0,
   }) async {
     final userId = await _getUserId();
     if (userId == null || userId.isEmpty) return false;
@@ -212,6 +217,10 @@ class OrderApiService {
       'restaurantRating': restaurantRating,
       'shipperRating': shipperRating ?? restaurantRating,
       'comment': comment,
+      'shipperComment': shipperComment.isNotEmpty ? shipperComment : comment,
+      'restaurantTags': restaurantTags,
+      'shipperTags': shipperTags,
+      'tipAmount': tipAmount,
     });
 
     try {
@@ -221,6 +230,38 @@ class OrderApiService {
       debugPrint('OrderApiService.submitReview error: $e');
       return false;
     }
+  }
+
+  /// Lấy dữ liệu Thu nhập & Đánh giá của Tài xế từ PostgreSQL Database (GET /api/shipper/dashboard)
+  Future<Map<String, dynamic>?> fetchShipperDashboard() async {
+    final userId = await _getUserId();
+    final headers = await _getHeaders();
+    if (userId != null && userId.isNotEmpty) {
+      headers['X-User-Id'] = userId;
+    }
+
+    try {
+      final response = await _safeGet('/shipper/dashboard', headers, timeout: const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data is Map) return Map<String, dynamic>.from(data);
+      }
+    } catch (e) {
+      debugPrint('OrderApiService.fetchShipperDashboard direct error: $e');
+    }
+
+    if (userId != null && userId.isNotEmpty) {
+      try {
+        final response = await _safeGet('/users/$userId/shipper-dashboard', headers, timeout: const Duration(seconds: 5));
+        if (response.statusCode == 200) {
+          final data = jsonDecode(utf8.decode(response.bodyBytes));
+          if (data is Map) return Map<String, dynamic>.from(data);
+        }
+      } catch (e) {
+        debugPrint('OrderApiService.fetchShipperDashboard user-route error: $e');
+      }
+    }
+    return null;
   }
 
   /// Tạo đơn hàng trực tiếp và lưu vào PostgreSQL (POST /api/users/{userId}/orders/direct)
@@ -340,6 +381,7 @@ class OrderApiService {
 
     final rawId = json['id']?.toString();
     final rawOrderCode = json['orderCode']?.toString();
+    final rawRestaurantId = restaurant?['id']?.toString() ?? json['restaurantId']?.toString();
     final orderId = (rawOrderCode != null && rawOrderCode.isNotEmpty)
         ? rawOrderCode
         : (rawId ?? 'SP-0000');
@@ -347,10 +389,22 @@ class OrderApiService {
     final createdAtStr = json['createdAt']?.toString();
     final createdAt = createdAtStr != null ? DateTime.tryParse(createdAtStr) ?? DateTime.now() : DateTime.now();
 
+    ReviewModel? review;
+    if (json['review'] != null && json['review'] is Map) {
+      final r = Map<String, dynamic>.from(json['review'] as Map);
+      review = ReviewModel.fromJson(r);
+    } else if (json['Review'] != null && json['Review'] is Map) {
+      final r = Map<String, dynamic>.from(json['Review'] as Map);
+      review = ReviewModel.fromJson(r);
+    } else if (json['rating'] != null || json['Rating'] != null) {
+      review = ReviewModel.fromJson(json);
+    }
+
     return OrderModel(
       id: orderId,
       backendId: rawId,
       orderCode: rawOrderCode,
+      restaurantId: rawRestaurantId,
       restaurantName: restaurantName,
       restaurantAddress: restaurantAddress,
       restaurantEmoji: '',
@@ -365,6 +419,7 @@ class OrderApiService {
       createdAt: createdAt,
       estimatedDeliveryMinutes: status == OrderStatus.delivering ? 15 : (status == OrderStatus.preparing ? 25 : 0),
       shipper: shipper,
+      review: review,
     );
   }
 }

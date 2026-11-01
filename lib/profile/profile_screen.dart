@@ -80,8 +80,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (confirm == true) {
-      _apiService.clearCache();
-      await AuthService().signOut();
+      try {
+        _apiService.clearCache();
+        await AuthService().signOut();
+      } catch (_) {}
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const AuthScreen()),

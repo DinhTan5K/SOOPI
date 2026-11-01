@@ -57,23 +57,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   Future<void> _loadDriverInfo() async {
     try {
       final profile = await ProfileApiService().getProfile();
-      if (profile.id.isNotEmpty) {
+      if (profile.id.isNotEmpty && mounted) {
         setState(() {
           _driverId = profile.id;
           _driverName = profile.fullName.isNotEmpty ? profile.fullName : 'Tài xế SOOPI';
           _driverPhone = profile.phoneNumber;
         });
-      } else {
-        // Fallback test ID nếu chưa đăng nhập backend
-        setState(() {
-          _driverId = '11111111-1111-1111-1111-111111111111';
-        });
       }
-    } catch (_) {
-      setState(() {
-        _driverId = '11111111-1111-1111-1111-111111111111';
-      });
-    }
+    } catch (_) {}
   }
 
   Future<void> _toggleOnlineStatus(bool value) async {

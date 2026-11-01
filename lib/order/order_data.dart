@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/order_api_service.dart';
 
 enum OrderStatus {
@@ -115,12 +117,65 @@ class ReviewModel {
     this.tipAmount = 0,
     required this.createdAt,
   });
+
+  Map<String, dynamic> toJson() => {
+        'restaurantRating': restaurantRating,
+        'restaurantTags': restaurantTags,
+        'restaurantComment': restaurantComment,
+        'shipperRating': shipperRating,
+        'shipperTags': shipperTags,
+        'shipperComment': shipperComment,
+        'tipAmount': tipAmount,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  static List<String> _parseTags(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) => e.toString().trim()).where((s) => s.isNotEmpty).toList();
+    }
+    if (raw is String && raw.trim().isNotEmpty) {
+      return raw.split('|').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    }
+    return [];
+  }
+
+  factory ReviewModel.fromJson(Map<String, dynamic> json) {
+    final restComment = json['restaurantComment']?.toString() ??
+        json['comment']?.toString() ??
+        json['Comment']?.toString() ??
+        '';
+    final shipComment = json['shipperComment']?.toString() ??
+        json['ShipperComment']?.toString() ??
+        '';
+    return ReviewModel(
+      restaurantRating: (json['restaurantRating'] as num?)?.toInt() ??
+          (json['RestaurantRating'] as num?)?.toInt() ??
+          (json['rating'] as num?)?.toInt() ??
+          (json['Rating'] as num?)?.toInt() ??
+          5,
+      restaurantTags: _parseTags(json['restaurantTags'] ?? json['RestaurantTags'] ?? json['tags']),
+      restaurantComment: restComment,
+      shipperRating: (json['shipperRating'] as num?)?.toInt() ??
+          (json['ShipperRating'] as num?)?.toInt() ??
+          (json['driverRating'] as num?)?.toInt() ??
+          5,
+      shipperTags: _parseTags(json['shipperTags'] ?? json['ShipperTags']),
+      shipperComment: shipComment.isNotEmpty ? shipComment : restComment,
+      tipAmount: (json['tipAmount'] as num?)?.toInt() ??
+          (json['TipAmount'] as num?)?.toInt() ??
+          0,
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+    );
+  }
 }
 
 class OrderModel {
   final String id;
   final String? backendId;
   final String? orderCode;
+  final String? restaurantId;
   final String restaurantName;
   final String restaurantAddress;
   final String restaurantEmoji;
@@ -143,6 +198,7 @@ class OrderModel {
     required this.id,
     this.backendId,
     this.orderCode,
+    this.restaurantId,
     required this.restaurantName,
     required this.restaurantAddress,
     this.restaurantEmoji = '',
@@ -196,6 +252,24 @@ class OrderData extends ChangeNotifier {
     notifyListeners();
     try {
       final remoteOrders = await OrderApiService().fetchOrders();
+
+      // Khôi phục đánh giá đã lưu nếu backend chưa trả về trường review
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        for (final o in remoteOrders) {
+          if (o.review == null) {
+            final saved = prefs.getString('soopi.order_review.${o.id}') ??
+                (o.backendId != null ? prefs.getString('soopi.order_review.${o.backendId}') : null) ??
+                (o.orderCode != null ? prefs.getString('soopi.order_review.${o.orderCode}') : null);
+            if (saved != null && saved.isNotEmpty) {
+              try {
+                o.review = ReviewModel.fromJson(jsonDecode(saved) as Map<String, dynamic>);
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+
       _orders.clear();
       _orders.addAll(remoteOrders);
       isFromBackend = true;
@@ -291,33 +365,8 @@ class OrderData extends ChangeNotifier {
       notifyListeners();
       return backendOrder;
     } catch (e) {
-      debugPrint('OrderData.createOrder Backend error: $e, fallback local');
-      if (couponCode != null && couponCode.trim().isNotEmpty) {
-        rethrow;
-      }
-      final tempId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
-      final newOrder = OrderModel(
-        id: tempId,
-        restaurantName: restaurantName,
-        restaurantAddress: restaurantAddress,
-        restaurantEmoji: restaurantEmoji,
-        items: List.from(items),
-        deliveryFee: deliveryFee,
-        discount: discount,
-        paymentMethod: paymentMethod,
-        deliveryAddress: deliveryAddress,
-        status: OrderStatus.pending,
-        createdAt: DateTime.now(),
-        estimatedDeliveryMinutes: 25,
-        restaurantLat: restaurantLat,
-        restaurantLng: restaurantLng,
-        userLat: userLat,
-        userLng: userLng,
-        shipper: null,
-      );
-      _orders.insert(0, newOrder);
-      notifyListeners();
-      return newOrder;
+      debugPrint('OrderData.createOrder Backend error: $e');
+      rethrow;
     }
   }
 
@@ -338,53 +387,65 @@ class OrderData extends ChangeNotifier {
     notifyListeners();
   }
 
-  OrderModel reorder(OrderModel oldOrder) {
-    final newId = 'SP-${(DateTime.now().millisecondsSinceEpoch % 10000).toString().padLeft(4, '0')}';
-    final newOrder = OrderModel(
-      id: newId,
+  Future<OrderModel> reorder(OrderModel oldOrder) async {
+    return await createOrder(
+      restaurantId: oldOrder.backendId,
       restaurantName: oldOrder.restaurantName,
       restaurantAddress: oldOrder.restaurantAddress,
       restaurantEmoji: oldOrder.restaurantEmoji,
-      items: oldOrder.items.map((item) => OrderItem(
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        emoji: item.emoji,
-        note: item.note,
-      )).toList(),
-      deliveryFee: oldOrder.deliveryFee,
-      discount: 0,
-      paymentMethod: oldOrder.paymentMethod,
+      items: oldOrder.items,
       deliveryAddress: oldOrder.deliveryAddress,
-      status: OrderStatus.pending,
-      createdAt: DateTime.now(),
-      estimatedDeliveryMinutes: 25,
-      shipper: null,
+      paymentMethod: oldOrder.paymentMethod,
+      deliveryFee: oldOrder.deliveryFee,
+      restaurantLat: oldOrder.restaurantLat,
+      restaurantLng: oldOrder.restaurantLng,
+      userLat: oldOrder.userLat,
+      userLng: oldOrder.userLng,
     );
-
-    _orders.insert(0, newOrder);
-    notifyListeners();
-    return newOrder;
   }
 
   void submitReview(String orderId, ReviewModel review) {
     final order = findById(orderId);
-    if (order == null) return;
+    if (order != null) {
+      order.review = review;
+      notifyListeners();
+    }
 
-    order.review = review;
-    notifyListeners();
+    // Luôn lưu ngay review vào SharedPreferences để không bao giờ bị mất
+    try {
+      SharedPreferences.getInstance().then((prefs) {
+        final encoded = jsonEncode(review.toJson());
+        prefs.setString('soopi.order_review.$orderId', encoded);
+        if (order?.id != null && order!.id != orderId) {
+          prefs.setString('soopi.order_review.${order.id}', encoded);
+        }
+        if (order?.backendId != null && order!.backendId!.isNotEmpty) {
+          prefs.setString('soopi.order_review.${order.backendId}', encoded);
+        }
+        if (order?.orderCode != null && order!.orderCode!.isNotEmpty) {
+          prefs.setString('soopi.order_review.${order.orderCode}', encoded);
+        }
+      });
+    } catch (_) {}
+
+    final lookupId = order?.backendId ?? orderId;
 
     OrderApiService().submitReview(
-      orderId: orderId,
+      orderId: lookupId,
       restaurantRating: review.restaurantRating,
       shipperRating: review.shipperRating,
       comment: review.restaurantComment.isNotEmpty
           ? review.restaurantComment
-          : (review.shipperComment.isNotEmpty ? review.shipperComment : 'Đánh giá món ăn'),
+          : review.shipperComment,
+      shipperComment: review.shipperComment.isNotEmpty
+          ? review.shipperComment
+          : review.restaurantComment,
+      restaurantTags: review.restaurantTags,
+      shipperTags: review.shipperTags,
+      tipAmount: review.tipAmount,
     ).then((success) {
       if (success) {
-        debugPrint('OrderData: Gửi đánh giá lên Backend thành công ($orderId)');
+        debugPrint('OrderData: Gửi đánh giá lên Backend thành công ($lookupId)');
       }
     });
   }

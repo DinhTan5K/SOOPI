@@ -33,6 +33,10 @@ public sealed class RestaurantsController(
     public async Task<IActionResult> Menu(Guid id, CancellationToken ct) =>
         Ok(await service.Menu(id, ct));
 
+    [HttpGet("{id:guid}/reviews")]
+    public async Task<IActionResult> Reviews(Guid id, CancellationToken ct) =>
+        Ok(await reviews.GetRestaurantReviews(id, ct));
+
     [HttpPut("{id:guid}/owner/{ownerId:guid}")]
     [Authorize, ManagementAccess]
     public async Task<IActionResult> Update(

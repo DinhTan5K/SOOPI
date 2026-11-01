@@ -82,11 +82,9 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
         _driverId = profile.id;
         _driverName = profile.fullName.isNotEmpty ? profile.fullName : 'Tài xế SOOPI';
         _driverPhone = profile.phoneNumber;
-      } else {
-        _driverId = 'd16e5d6a-903e-40fa-8b01-cf146ecd55ac';
       }
-    } catch (_) {
-      _driverId = 'd16e5d6a-903e-40fa-8b01-cf146ecd55ac';
+    } catch (e) {
+      debugPrint('[ShipperHomeScreen] Lỗi tải profile tài xế: $e');
     }
 
     // Lấy vị trí ban đầu (không chặn nếu timeout)

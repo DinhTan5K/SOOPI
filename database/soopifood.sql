@@ -196,6 +196,10 @@ CREATE TABLE IF NOT EXISTS "Reviews" (
     "RestaurantRating" smallint NOT NULL CHECK ("RestaurantRating" BETWEEN 1 AND 5),
     "ShipperRating" smallint CHECK ("ShipperRating" BETWEEN 1 AND 5),
     "Comment" varchar(2000) NOT NULL DEFAULT '',
+    "ShipperComment" varchar(2000) NOT NULL DEFAULT '',
+    "RestaurantTags" varchar(1000) NOT NULL DEFAULT '',
+    "ShipperTags" varchar(1000) NOT NULL DEFAULT '',
+    "TipAmount" integer NOT NULL DEFAULT 0,
     "CreatedAt" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
