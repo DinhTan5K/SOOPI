@@ -22,6 +22,8 @@ public sealed class OrderDispatchTask
     public string RestaurantName { get; set; } = string.Empty;
     public double RestaurantLatitude { get; set; }
     public double RestaurantLongitude { get; set; }
+    public double CustomerLatitude { get; set; }
+    public double CustomerLongitude { get; set; }
     public string DeliveryAddress { get; set; } = string.Empty;
     public decimal DeliveryFee { get; set; }
     public decimal TotalAmount { get; set; }
@@ -42,4 +44,8 @@ public sealed record DriverOfferPayload(
     decimal DeliveryFee,
     decimal TotalAmount,
     double DistanceToRestaurantKm,
-    int TimeoutSeconds);
+    int TimeoutSeconds,
+    double RestaurantLatitude = 16.0442,
+    double RestaurantLongitude = 108.2213,
+    double CustomerLatitude = 16.0542,
+    double CustomerLongitude = 108.2313);

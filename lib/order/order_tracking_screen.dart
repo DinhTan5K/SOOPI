@@ -15,8 +15,13 @@ import '../services/profile_api_service.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
+  final bool fromCheckout;
 
-  const OrderTrackingScreen({super.key, required this.orderId});
+  const OrderTrackingScreen({
+    super.key,
+    required this.orderId,
+    this.fromCheckout = false,
+  });
 
   @override
   State<OrderTrackingScreen> createState() => _OrderTrackingScreenState();
@@ -33,6 +38,18 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
 
   LatLng? _savedUserPos;
   String? _savedUserAddress;
+
+  void _handleBackNavigation() {
+    if (widget.fromCheckout) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+    } else {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -274,28 +291,53 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
       builder: (context, _) {
         final order = _orderData.findById(widget.orderId);
         if (order == null) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('Theo dõi đơn hàng')),
-            body: const Center(child: Text('Không tìm thấy thông tin đơn hàng')),
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) return;
+              _handleBackNavigation();
+            },
+            child: Scaffold(
+              appBar: AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Quay lại',
+                  onPressed: _handleBackNavigation,
+                ),
+                title: const Text('Theo dõi đơn hàng'),
+              ),
+              body: const Center(child: Text('Không tìm thấy thông tin đơn hàng')),
+            ),
           );
         }
 
-        return Scaffold(
-          appBar: AppBar(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Theo dõi đơn hàng',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'Mã đơn: #${order.id}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            _handleBackNavigation();
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Quay lại',
+                onPressed: _handleBackNavigation,
+              ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Theo dõi đơn hàng',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Mã đơn: #${order.id}',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
             ),
-          ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -325,7 +367,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen>
               ],
             ),
           ),
-        );
+        ),
+      );
       },
     );
   }

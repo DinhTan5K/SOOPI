@@ -19,6 +19,8 @@ public interface IOrderService
     Task<bool> UpdateDelivery(Guid actorId, Guid orderId, DeliveryUpdate input, CancellationToken ct);
     Task<bool> DriverUpdateOrderStatusAsync(Guid orderId, Guid driverId, string status, CancellationToken ct);
     Task<bool> AssignShipperAsync(Guid orderId, Guid shipperId, CancellationToken ct);
+    Task<bool> HasActiveOrderForDriverAsync(Guid driverId, CancellationToken ct);
+    Task<Guid> ResolveDriverIdAsync(string driverIdentifier, CancellationToken ct);
     Task TriggerOrderDispatchAsync(Guid orderId, CancellationToken ct);
     Task<List<DriverOfferPayload>> GetAvailableOrdersForShipperAsync(double driverLat, double driverLng, CancellationToken ct);
 }
@@ -622,6 +624,7 @@ public sealed class OrderService(
         // Tọa độ quán (nếu chưa có thì dùng mặc định FPT Complex Đà Nẵng)
         var shopLat = (double)(order.Restaurant.Latitude ?? 16.0442m);
         var shopLng = (double)(order.Restaurant.Longitude ?? 108.2213m);
+        var (custLat, custLng) = ResolveCustomerCoordinates(order.Id, order.DeliveryAddress, shopLat, shopLng);
 
         var task = new OrderDispatchTask
         {
@@ -631,6 +634,8 @@ public sealed class OrderService(
             RestaurantName = order.Restaurant.Name,
             RestaurantLatitude = shopLat,
             RestaurantLongitude = shopLng,
+            CustomerLatitude = custLat,
+            CustomerLongitude = custLng,
             DeliveryAddress = order.DeliveryAddress,
             DeliveryFee = order.DeliveryFee,
             TotalAmount = order.TotalAmount
@@ -639,15 +644,78 @@ public sealed class OrderService(
         await dispatchQueue.EnqueueAsync(task, ct);
     }
 
+    private static (double Lat, double Lng) ResolveCustomerCoordinates(
+        Guid orderId,
+        string? deliveryAddress,
+        double shopLat,
+        double shopLng)
+    {
+        var hash = Math.Abs(orderId.GetHashCode());
+        var jitterLat = ((hash % 40) - 20) * 0.00015;
+        var jitterLng = (((hash / 40) % 40) - 20) * 0.00015;
+
+        var addr = (deliveryAddress ?? string.Empty).ToLowerInvariant();
+        if (addr.Contains("an hải") || addr.Contains("sơn trà"))
+        {
+            return (Math.Round(16.0615 + jitterLat, 6), Math.Round(108.2325 + jitterLng, 6));
+        }
+        if (addr.Contains("hải châu"))
+        {
+            return (Math.Round(16.0678 + jitterLat, 6), Math.Round(108.2208 + jitterLng, 6));
+        }
+        if (addr.Contains("ngũ hành sơn") || addr.Contains("mỹ an") || addr.Contains("hòa hải"))
+        {
+            return (Math.Round(16.0385 + jitterLat, 6), Math.Round(108.2435 + jitterLng, 6));
+        }
+        if (addr.Contains("thanh khê"))
+        {
+            return (Math.Round(16.0660 + jitterLat, 6), Math.Round(108.1950 + jitterLng, 6));
+        }
+        if (addr.Contains("cẩm lệ"))
+        {
+            return (Math.Round(16.0220 + jitterLat, 6), Math.Round(108.2080 + jitterLng, 6));
+        }
+
+        // Mặc định: Điểm giao hàng cách quán khoảng 1.2km - 1.8km
+        var offsetLat = 0.0085 + ((hash % 30) * 0.0002);
+        var offsetLng = 0.0075 + (((hash / 30) % 30) * 0.0002);
+        return (Math.Round(shopLat + offsetLat, 6), Math.Round(shopLng + offsetLng, 6));
+    }
+
+    public async Task<Guid> ResolveDriverIdAsync(string driverIdentifier, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(driverIdentifier)) return Guid.Empty;
+        if (Guid.TryParse(driverIdentifier, out var parsedGuid))
+        {
+            return parsedGuid;
+        }
+        var user = await db.Users.FirstOrDefaultAsync(u => u.FirebaseUid == driverIdentifier || u.Email == driverIdentifier, ct);
+        return user?.Id ?? Guid.Empty;
+    }
+
+    public async Task<bool> HasActiveOrderForDriverAsync(Guid driverId, CancellationToken ct)
+    {
+        if (driverId == Guid.Empty) return false;
+        var cutoff = DateTime.UtcNow.AddMinutes(-30);
+        return await db.Orders
+            .AnyAsync(o => o.ShipperId == driverId 
+                        && o.CreatedAt >= cutoff 
+                        && (o.Status == "ShipperAssigned" || o.Status == "Delivering"), ct);
+    }
+
     public async Task<List<DriverOfferPayload>> GetAvailableOrdersForShipperAsync(
         double driverLat,
         double driverLng,
         CancellationToken ct)
     {
+        // Chỉ lấy các đơn mới phát sinh trong vòng 30 phút trở lại và chưa có tài xế nhận
+        var cutoffTime = DateTime.UtcNow.AddMinutes(-30);
         var waitingOrders = await db.Orders
             .AsNoTracking()
             .Include(o => o.Restaurant)
-            .Where(o => (o.Status == "ReadyForPickup" || o.Status == "Delivering") && o.ShipperId == null)
+            .Where(o => (o.Status == "ReadyForPickup" || o.Status == "Delivering") 
+                     && o.ShipperId == null 
+                     && o.CreatedAt >= cutoffTime)
             .OrderByDescending(o => o.CreatedAt)
             .Take(20)
             .ToListAsync(ct);
@@ -662,6 +730,7 @@ public sealed class OrderService(
             // Chỉ hiện các đơn loanh quanh tài xế (trong bán kính <= 5km), loại bỏ đơn cách xa 600km
             if (dist <= 5.0)
             {
+                var (custLat, custLng) = ResolveCustomerCoordinates(o.Id, o.DeliveryAddress, shopLat, shopLng);
                 result.Add(new DriverOfferPayload(
                     o.Id,
                     o.OrderCode,
@@ -670,7 +739,11 @@ public sealed class OrderService(
                     o.DeliveryFee,
                     o.TotalAmount,
                     Math.Round(dist, 2),
-                    15
+                    15,
+                    shopLat,
+                    shopLng,
+                    custLat,
+                    custLng
                 ));
             }
         }
@@ -686,6 +759,24 @@ public sealed class OrderService(
             .FirstOrDefaultAsync(o => o.Id == orderId, ct);
 
         if (order is null || order.Status is "Cancelled" or "Delivered")
+        {
+            return false;
+        }
+
+        // Chặn nếu đơn này đã được gán cho shipper khác
+        if (order.ShipperId.HasValue && order.ShipperId.Value != shipperId)
+        {
+            return false;
+        }
+
+        // Chặn nếu shipper này đang có đơn khác thực sự đang giao trong vòng 30 phút trở lại
+        var cutoff = DateTime.UtcNow.AddMinutes(-30);
+        var hasRecentActive = await db.Orders
+            .AnyAsync(o => o.Id != orderId 
+                        && o.ShipperId == shipperId 
+                        && o.CreatedAt >= cutoff 
+                        && (o.Status == "ShipperAssigned" || o.Status == "Delivering"), ct);
+        if (hasRecentActive)
         {
             return false;
         }

@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+
+import 'merchant_style.dart';
+
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -102,146 +105,140 @@ class _MenuEditorState extends State<MenuEditor> {
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      24,
-      24,
-      24,
-      MediaQuery.viewInsetsOf(context).bottom + 24,
-    ),
-    child: SingleChildScrollView(
-      child: Form(
-        key: _form,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.item == null ? 'Thêm món mới' : 'Sửa món',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+  Widget build(BuildContext context) => MerchantAppearance(
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        24,
+        24,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Form(
+          key: _form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.item == null ? 'Thêm món mới' : 'Sửa món',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Đóng',
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Center(child: MenuPhoto(imageBase64: _imageBase64, size: 150)),
-            const SizedBox(height: 8),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _picking ? null : _pickPhoto,
-                  icon: _picking
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.add_photo_alternate_outlined),
-                  label: Text(
-                    _picking
-                        ? 'Đang tải ảnh...'
-                        : _imageBase64 == null
-                        ? 'Chọn ảnh món'
-                        : 'Đổi ảnh',
+                  IconButton(
+                    tooltip: 'Đóng',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
                   ),
-                ),
-                if (_imageBase64 != null)
-                  TextButton.icon(
-                    onPressed: _picking
-                        ? null
-                        : () => setState(() => _imageBase64 = null),
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Xóa ảnh'),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Center(child: MenuPhoto(imageBase64: _imageBase64, size: 150)),
+              const SizedBox(height: 8),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _picking ? null : _pickPhoto,
+                    icon: _picking
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add_photo_alternate_outlined),
+                    label: Text(
+                      _picking
+                          ? 'Đang tải ảnh...'
+                          : _imageBase64 == null
+                          ? 'Chọn ảnh món'
+                          : 'Đổi ảnh',
+                    ),
                   ),
-              ],
-            ),
-            const Text(
-              'Ảnh món (tùy chọn) • Tối đa 2 MB',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54),
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _name,
-              maxLength: 80,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'Tên món',
-                border: OutlineInputBorder(),
+                  if (_imageBase64 != null)
+                    TextButton.icon(
+                      onPressed: _picking
+                          ? null
+                          : () => setState(() => _imageBase64 = null),
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Xóa ảnh'),
+                    ),
+                ],
               ),
-              validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Nhập tên món.' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _price,
-              keyboardType: TextInputType.number,
-              textInputAction: TextInputAction.next,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(9),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Giá bán',
-                suffixText: 'VND',
-                hintText: 'Ví dụ: 65000',
-                border: OutlineInputBorder(),
+              const Text(
+                'Ảnh món (tùy chọn) • Tối đa 2 MB',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black54),
               ),
-              validator: (v) => (int.tryParse(v ?? '') ?? 0) <= 0
-                  ? 'Nhập giá lớn hơn 0 bằng số nguyên VND.'
-                  : null,
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _category,
-              decoration: const InputDecoration(
-                labelText: 'Danh mục',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _name,
+                maxLength: 80,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Tên món'),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'Nhập tên món.' : null,
               ),
-              items: widget.categories
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (v) => setState(() => _category = v!),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _description,
-              maxLines: 3,
-              maxLength: 300,
-              decoration: const InputDecoration(
-                labelText: 'Mô tả (tùy chọn)',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _price,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(9),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Giá bán',
+                  suffixText: 'VND',
+                  hintText: 'Ví dụ: 65000',
+                ),
+                validator: (v) => (int.tryParse(v ?? '') ?? 0) <= 0
+                    ? 'Nhập giá lớn hơn 0 bằng số nguyên VND.'
+                    : null,
               ),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Còn hàng'),
-              subtitle: const Text('Tắt khi món đã hết.'),
-              value: _available,
-              onChanged: (v) => setState(() => _available = v),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _picking ? null : _submit,
-              child: const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text('Lưu món'),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: _category,
+                decoration: const InputDecoration(labelText: 'Danh mục'),
+                items: widget.categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) => setState(() => _category = v!),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _description,
+                maxLines: 3,
+                maxLength: 300,
+                decoration: const InputDecoration(
+                  labelText: 'Mô tả (tùy chọn)',
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Còn hàng'),
+                subtitle: const Text('Tắt khi món đã hết.'),
+                value: _available,
+                onChanged: (v) => setState(() => _available = v),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: _picking ? null : _submit,
+                child: const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text('Lưu món'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ),

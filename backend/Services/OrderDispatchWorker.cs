@@ -78,7 +78,11 @@ public sealed class OrderDispatchWorker(
                     task.DeliveryFee,
                     task.TotalAmount,
                     Math.Round(distance, 2),
-                    15
+                    15,
+                    task.RestaurantLatitude,
+                    task.RestaurantLongitude,
+                    task.CustomerLatitude,
+                    task.CustomerLongitude
                 );
 
                 await hubContext.Clients.Group($"driver_{driver.DriverId}")

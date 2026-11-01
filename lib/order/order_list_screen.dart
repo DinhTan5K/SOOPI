@@ -24,7 +24,7 @@ class _OrderListScreenState extends State<OrderListScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _orderData.refreshFromApi();
+    _refreshAfterBuild();
 
     _socketStatusSub = OrderSocketService().onOrderStatus.listen((data) {
       if (mounted) {
@@ -42,8 +42,14 @@ class _OrderListScreenState extends State<OrderListScreen>
   void didUpdateWidget(covariant OrderListScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isVisible && !oldWidget.isVisible) {
-      _orderData.refreshFromApi();
+      _refreshAfterBuild();
     }
+  }
+
+  void _refreshAfterBuild() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _orderData.refreshFromApi();
+    });
   }
 
   @override

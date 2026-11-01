@@ -1,17 +1,34 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/driver_location_tracker.dart';
+import '../services/geocoding_service.dart';
 import '../services/order_socket_service.dart';
 import '../services/profile_api_service.dart';
 import '../driver/driver_offer_dialog.dart';
 
 class ShipperHomeScreen extends StatefulWidget {
   final Function(Map<String, dynamic> offer) onTripAccepted;
+  final bool hasActiveTrip;
+  final Map<String, dynamic>? activeTrip;
+  final String activeTripCode;
+  final VoidCallback? onNavigateToActiveTrip;
+  final bool isOnline;
+  final Function(bool value)? onToggleOnline;
 
-  const ShipperHomeScreen({super.key, required this.onTripAccepted});
+  const ShipperHomeScreen({
+    super.key,
+    required this.onTripAccepted,
+    this.hasActiveTrip = false,
+    this.activeTrip,
+    this.activeTripCode = '',
+    this.onNavigateToActiveTrip,
+    this.isOnline = true,
+    this.onToggleOnline,
+  });
 
   @override
   State<ShipperHomeScreen> createState() => _ShipperHomeScreenState();
@@ -22,8 +39,6 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
   final _socket = OrderSocketService();
   final _mapController = MapController();
 
-  bool _isOnline = false;
-  bool _isLoading = false;
   bool _isShowingOfferDialog = false;
   String _driverId = '';
   String _driverName = 'Tài xế SOOPI';
@@ -32,6 +47,8 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
   // Mặc định Đà Nẵng
   LatLng _currentLocation = const LatLng(16.0442, 108.2213);
   List<Map<String, dynamic>> _availableOrders = [];
+  LatLng? _geocodedCustomerPos;
+  String _lastGeocodedOrderId = '';
 
   StreamSubscription? _offerSubscription;
   StreamSubscription? _statusSubscription;
@@ -43,13 +60,14 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
     _initShipper();
 
     _offerSubscription = _socket.onDeliveryOffer.listen((offer) {
-      if (!mounted || !_isOnline) return;
+      // Khi tài xế đang có đơn giao dở dang hoặc đang offline -> Tuyệt đối không nổ đơn che bản đồ
+      if (!mounted || !widget.isOnline || widget.hasActiveTrip) return;
       _fetchAvailableOrders();
       _handleIncomingOffer(offer);
     });
 
     _statusSubscription = _socket.onOrderStatus.listen((_) {
-      if (!mounted || !_isOnline) return;
+      if (!mounted || !widget.isOnline || widget.hasActiveTrip) return;
       _fetchAvailableOrders();
     });
 
@@ -62,9 +80,197 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
             _currentLocation = newCoord;
           });
         }
-        _fetchAvailableOrders();
+        if (!widget.hasActiveTrip && widget.isOnline) {
+          _fetchAvailableOrders();
+        }
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ShipperHomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.hasActiveTrip != oldWidget.hasActiveTrip ||
+        widget.activeTrip?['orderId'] != oldWidget.activeTrip?['orderId']) {
+      if (widget.hasActiveTrip && widget.activeTrip != null) {
+        setState(() {
+          _availableOrders = [];
+        });
+        _syncActiveTripCoordinates(widget.activeTrip!);
+      } else {
+        setState(() {
+          _geocodedCustomerPos = null;
+          _lastGeocodedOrderId = '';
+        });
+        // Tài xế vừa rảnh rỗi (hoàn thành đơn) -> Quét lại đơn đang chờ và nổ đơn nếu có
+        _fetchAvailableOrders(autoPromptFirst: true);
+      }
+    }
+    if (widget.isOnline != oldWidget.isOnline) {
+      if (widget.isOnline) {
+        _fetchAvailableOrders(autoPromptFirst: true);
+      } else {
+        setState(() {
+          _availableOrders = [];
+        });
+      }
+    }
+  }
+
+  double? _parseDouble(dynamic val) {
+    if (val == null) return null;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString());
+  }
+
+  LatLng _getActiveRestaurantPos(Map<String, dynamic> trip) {
+    final lat = _parseDouble(trip['restaurantLatitude'] ?? trip['RestaurantLatitude'] ?? trip['latitude']);
+    final lng = _parseDouble(trip['restaurantLongitude'] ?? trip['RestaurantLongitude'] ?? trip['longitude']);
+    if (lat != null && lng != null && lat != 0 && lng != 0) {
+      return LatLng(lat, lng);
+    }
+    return LatLng(_currentLocation.latitude + 0.0045, _currentLocation.longitude + 0.0038);
+  }
+
+  LatLng _getActiveCustomerPos(Map<String, dynamic> trip, LatLng restaurantPos) {
+    final orderId = (trip['orderId'] ?? trip['OrderId'] ?? '').toString();
+    if (_geocodedCustomerPos != null && _lastGeocodedOrderId == orderId) {
+      return _geocodedCustomerPos!;
+    }
+    final lat = _parseDouble(trip['customerLatitude'] ?? trip['CustomerLatitude']);
+    final lng = _parseDouble(trip['customerLongitude'] ?? trip['CustomerLongitude']);
+    if (lat != null && lng != null && lat != 0 && lng != 0) {
+      return LatLng(lat, lng);
+    }
+    return LatLng(restaurantPos.latitude + 0.0095, restaurantPos.longitude + 0.0082);
+  }
+
+  LatLng _getWaitingOrderPos(Map<String, dynamic> order, int index) {
+    final lat = _parseDouble(order['restaurantLatitude'] ?? order['RestaurantLatitude']);
+    final lng = _parseDouble(order['restaurantLongitude'] ?? order['RestaurantLongitude']);
+    if (lat != null && lng != null && lat != 0 && lng != 0) {
+      // Thêm độ lệch cực nhỏ theo index để nếu nhiều đơn cùng 1 quán không đè khít lên nhau
+      return LatLng(lat + (index * 0.00025), lng + (index * 0.00025));
+    }
+    final offsetLat = 0.003 + (index * 0.0018);
+    final offsetLng = 0.0025 - (index * 0.0015);
+    return LatLng(_currentLocation.latitude + offsetLat, _currentLocation.longitude + offsetLng);
+  }
+
+  Future<void> _syncActiveTripCoordinates(Map<String, dynamic> trip) async {
+    final orderId = (trip['orderId'] ?? trip['OrderId'] ?? '').toString();
+    final restaurantPos = _getActiveRestaurantPos(trip);
+    final fallbackCustomerPos = _getActiveCustomerPos(trip, restaurantPos);
+
+    // Đưa camera về trung điểm giữa tài xế, quán và khách để thấy trọn lộ trình
+    final midLat = (_currentLocation.latitude + restaurantPos.latitude + fallbackCustomerPos.latitude) / 3.0;
+    final midLng = (_currentLocation.longitude + restaurantPos.longitude + fallbackCustomerPos.longitude) / 3.0;
+    try {
+      _mapController.move(LatLng(midLat, midLng), 14.2);
+    } catch (_) {}
+
+    final address = (trip['deliveryAddress'] ?? trip['DeliveryAddress'] ?? '').toString().trim();
+    if (address.isEmpty || GeocodingService.isRawCoordinateAddress(address)) return;
+
+    final geocoded = await GeocodingService.getCoordinatesFromAddress(address);
+    if (!mounted || geocoded == null) return;
+
+    // Chỉ dùng tọa độ geocode nếu nằm trong phạm vi hợp lý (<= 25km quanh quán)
+    final distKm = GeocodingService.calculateDistanceKm(
+      restaurantPos.latitude,
+      restaurantPos.longitude,
+      geocoded.latitude,
+      geocoded.longitude,
+    );
+    if (distKm <= 25.0 && mounted) {
+      setState(() {
+        _lastGeocodedOrderId = orderId;
+        _geocodedCustomerPos = geocoded;
+      });
+    }
+  }
+
+  List<LatLng> _getRoutePoints(LatLng start, LatLng end) {
+    final mid1 = LatLng(
+      start.latitude + (end.latitude - start.latitude) * 0.35,
+      start.longitude + (end.longitude - start.longitude) * 0.2,
+    );
+    final mid2 = LatLng(
+      start.latitude + (end.latitude - start.latitude) * 0.7,
+      start.longitude + (end.longitude - start.longitude) * 0.85,
+    );
+    return [start, mid1, mid2, end];
+  }
+
+  Widget _buildLocationPin({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String subLabel,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              Text(
+                subLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 3),
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2.5),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.45),
+                blurRadius: 6,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Icon(icon, color: Colors.white, size: 18),
+        ),
+      ],
+    );
   }
 
   @override
@@ -76,6 +282,19 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
   }
 
   Future<void> _initShipper() async {
+    final cached = ProfileApiService().cachedProfile;
+    if (cached != null && cached.id.isNotEmpty) {
+      _driverId = cached.id;
+      _driverName = cached.fullName.isNotEmpty ? cached.fullName : 'Tài xế SOOPI';
+      _driverPhone = cached.phoneNumber;
+    }
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (_driverId.isEmpty && authUser != null) {
+      _driverId = authUser.uid;
+      _driverName = authUser.displayName ?? authUser.email ?? 'Tài xế SOOPI';
+      _driverPhone = authUser.phoneNumber ?? '';
+    }
+
     try {
       final profile = await ProfileApiService().getProfile();
       if (profile.id.isNotEmpty) {
@@ -103,14 +322,25 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
       }
     } catch (_) {}
 
-    // Tự động bật chế độ nhận đơn ngay khi vào màn hình Tài xế
+    // Quét đơn chờ nếu đang online và rảnh rỗi, hoặc đồng bộ lộ trình nếu đang có chuyến đi
     if (mounted) {
-      await _toggleOnline(true, silent: true);
+      if (widget.hasActiveTrip && widget.activeTrip != null) {
+        _syncActiveTripCoordinates(widget.activeTrip!);
+      } else if (widget.isOnline) {
+        _fetchAvailableOrders(autoPromptFirst: true);
+      }
     }
   }
 
-  Future<void> _fetchAvailableOrders() async {
-    if (!_isOnline) return;
+  Future<void> _fetchAvailableOrders({bool autoPromptFirst = false}) async {
+    if (!widget.isOnline || widget.hasActiveTrip) {
+      if (mounted && _availableOrders.isNotEmpty) {
+        setState(() {
+          _availableOrders = [];
+        });
+      }
+      return;
+    }
     final list = await _socket.getAvailableOrdersForDriver(
       _currentLocation.latitude,
       _currentLocation.longitude,
@@ -119,68 +349,32 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
       setState(() {
         _availableOrders = list;
       });
-    }
-  }
 
-  Future<void> _toggleOnline(bool value, {bool silent = false}) async {
-    if (_driverId.isEmpty) return;
-    setState(() => _isLoading = true);
-
-    if (value) {
-      final ok = await _tracker.startTracking(
-        driverId: _driverId,
-        driverName: _driverName,
-        driverPhone: _driverPhone,
-      );
-      if (ok && mounted) {
-        setState(() => _isOnline = true);
-        _currentLocation = LatLng(_tracker.currentLatitude, _tracker.currentLongitude);
-        try {
-          _mapController.move(_currentLocation, 16);
-        } catch (_) {}
-        await _fetchAvailableOrders();
-        if (!silent && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-              content: Text('Đã bật nhận đơn! Tọa độ GPS đang cập nhật.'),
-            ),
-          );
-        }
+      // Tự động bung popup nổ đơn ngay khi tài xế rảnh rỗi vừa login / online và có đơn chờ mới
+      if (autoPromptFirst && _availableOrders.isNotEmpty && !_isShowingOfferDialog && !widget.hasActiveTrip && widget.isOnline) {
+        _handleIncomingOffer(_availableOrders.first);
       }
-    } else {
-      await _tracker.stopTracking(_driverId);
-      if (mounted) {
-        setState(() {
-          _isOnline = false;
-          _availableOrders = [];
-        });
-        if (!silent) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: Colors.grey,
-              duration: Duration(seconds: 2),
-              content: Text('Đã tắt nhận đơn (Nghỉ ngơi).'),
-            ),
-          );
-        }
-      }
-    }
-    if (mounted) {
-      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _handleIncomingOffer(Map<String, dynamic> offer) async {
-    if (_isShowingOfferDialog) return;
+    // Khi đang có chuyến đi, tuyệt đối không mở dialog nổ đơn che bản đồ
+    if (_isShowingOfferDialog || widget.hasActiveTrip) return;
     _isShowingOfferDialog = true;
 
     try {
+      String targetDriverId = _driverId;
+      if (targetDriverId.isEmpty) {
+        targetDriverId = ProfileApiService().cachedProfile?.id ?? '';
+        if (targetDriverId.isEmpty) {
+          targetDriverId = FirebaseAuth.instance.currentUser?.uid ?? '';
+        }
+      }
+
       final accepted = await DriverOfferDialog.show(
         context,
         offer: offer,
-        driverId: _driverId,
+        driverId: targetDriverId,
       );
 
       if (accepted == true && mounted) {
@@ -192,10 +386,28 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
   }
 
   Future<void> _acceptWaitingOrder(Map<String, dynamic> offer) async {
+    if (widget.hasActiveTrip) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.orange,
+          content: Text('Bạn đang có chuyến đi chưa hoàn tất. Vui lòng giao xong đơn hiện tại!'),
+        ),
+      );
+      return;
+    }
+
     final orderId = offer['orderId']?.toString() ?? '';
     if (orderId.isEmpty) return;
 
-    final ok = await _socket.driverAcceptOffer(orderId, _driverId);
+    String targetDriverId = _driverId;
+    if (targetDriverId.isEmpty) {
+      targetDriverId = ProfileApiService().cachedProfile?.id ?? '';
+      if (targetDriverId.isEmpty) {
+        targetDriverId = FirebaseAuth.instance.currentUser?.uid ?? '';
+      }
+    }
+
+    final ok = await _socket.driverAcceptOffer(orderId, targetDriverId);
     if (ok && mounted) {
       widget.onTripAccepted(offer);
     } else if (mounted) {
@@ -216,6 +428,19 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final activeTrip = widget.hasActiveTrip ? widget.activeTrip : null;
+    LatLng? activeRestaurantPos;
+    LatLng? activeCustomerPos;
+    List<LatLng> activeRoutePoints = [];
+
+    if (activeTrip != null) {
+      activeRestaurantPos = _getActiveRestaurantPos(activeTrip);
+      activeCustomerPos = _getActiveCustomerPos(activeTrip, activeRestaurantPos);
+      final leg1 = _getRoutePoints(_currentLocation, activeRestaurantPos);
+      final leg2 = _getRoutePoints(activeRestaurantPos, activeCustomerPos);
+      activeRoutePoints = [...leg1, ...leg2.skip(1)];
+    }
+
     return Stack(
       children: [
         // 1. BẢN ĐỒ TOÀN MÀN HÌNH
@@ -230,8 +455,63 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName: 'com.example.soopi',
             ),
+            if (activeRoutePoints.isNotEmpty)
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: activeRoutePoints,
+                    strokeWidth: 4.5,
+                    color: Colors.deepOrange,
+                  ),
+                ],
+              ),
             MarkerLayer(
               markers: [
+                // 1a. Khi đang có chuyến đi: Hiện pin Quán ăn và pin Khách hàng
+                if (activeTrip != null && activeRestaurantPos != null)
+                  Marker(
+                    point: activeRestaurantPos,
+                    width: 150,
+                    height: 78,
+                    child: _buildLocationPin(
+                      icon: Icons.storefront_rounded,
+                      color: Colors.deepOrange,
+                      label: (activeTrip['restaurantName'] ?? activeTrip['RestaurantName'] ?? 'Quán ăn SOOPI').toString(),
+                      subLabel: 'Điểm lấy món',
+                    ),
+                  ),
+                if (activeTrip != null && activeCustomerPos != null)
+                  Marker(
+                    point: activeCustomerPos,
+                    width: 165,
+                    height: 78,
+                    child: _buildLocationPin(
+                      icon: Icons.location_on_rounded,
+                      color: Colors.green.shade700,
+                      label: (activeTrip['deliveryAddress'] ?? activeTrip['DeliveryAddress'] ?? 'Điểm giao hàng').toString(),
+                      subLabel: 'Điểm giao cho khách',
+                    ),
+                  ),
+
+                // 1b. Khi đang rảnh rỗi và online: Hiện pin các quán đang có đơn chờ quanh tài xế
+                if (activeTrip == null && widget.isOnline && _availableOrders.isNotEmpty)
+                  for (int i = 0; i < _availableOrders.length; i++)
+                    Marker(
+                      point: _getWaitingOrderPos(_availableOrders[i], i),
+                      width: 145,
+                      height: 78,
+                      child: GestureDetector(
+                        onTap: () => _handleIncomingOffer(_availableOrders[i]),
+                        child: _buildLocationPin(
+                          icon: Icons.storefront_rounded,
+                          color: Colors.orange.shade800,
+                          label: (_availableOrders[i]['restaurantName'] ?? 'Quán SOOPI').toString(),
+                          subLabel: 'Ship ${_formatCurrency(_availableOrders[i]['deliveryFee'] ?? 13000)}',
+                        ),
+                      ),
+                    ),
+
+                // 1c. Vị trí hiện tại của Shipper
                 Marker(
                   point: _currentLocation,
                   width: 60,
@@ -239,7 +519,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      if (_isOnline)
+                      if (widget.isOnline)
                         Container(
                           width: 50,
                           height: 50,
@@ -251,7 +531,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: _isOnline ? Colors.green : Colors.grey.shade700,
+                          color: widget.isOnline ? Colors.green : Colors.grey.shade700,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                           boxShadow: const [
@@ -272,74 +552,77 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
           ],
         ),
 
-        // 2. HEADER: THẺ TRẠNG THÁI & CÔNG TẮC BẬT NHẬN ĐƠN
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Card(
+        // 2. BANNER ĐANG CÓ CHUYẾN ĐI (CHẠM ĐỂ QUAY LẠI CHUYẾN ĐI)
+        if (widget.hasActiveTrip)
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: Material(
               elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              borderRadius: BorderRadius.circular(14),
+              color: Colors.deepOrange,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: widget.onNavigateToActiveTrip,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.delivery_dining, color: Colors.white, size: 24),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          widget.activeTripCode.isNotEmpty
+                              ? 'Đang giao đơn #${widget.activeTripCode} • Chạm để quay lại'
+                              : 'Đang có chuyến đi chưa hoàn tất • Chạm để quay lại',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 14),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // 2b. CHỈ BÁO KHI TẠM NGHỈ (OFFLINE)
+        if (!widget.isOnline && !widget.hasActiveTrip)
+          Positioned(
+            top: 12,
+            left: 16,
+            right: 16,
+            child: Material(
+              elevation: 3,
+              borderRadius: BorderRadius.circular(14),
+              color: Colors.black87.withValues(alpha: 0.8),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircleAvatar(
-                      radius: 20,
-                      backgroundColor: _isOnline ? Colors.green.shade100 : Colors.grey.shade200,
-                      child: Icon(
-                        _isOnline ? Icons.radar : Icons.power_settings_new,
-                        color: _isOnline ? Colors.green : Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
+                    Icon(Icons.nightlight_round, color: Colors.amber, size: 18),
+                    SizedBox(width: 10),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _isOnline ? 'Đang sẵn sàng nhận cuốc' : 'Đang tạm dừng nhận cuốc',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: _isOnline ? Colors.green.shade800 : Colors.black87,
-                            ),
-                          ),
-                          Text(
-                            _isOnline
-                                ? 'GPS: ${_currentLocation.latitude.toStringAsFixed(4)}, ${_currentLocation.longitude.toStringAsFixed(4)}'
-                                : 'Bật công tắc để tìm đơn quanh bạn',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                          ),
-                        ],
+                      child: Text(
+                        'Đang tạm nghỉ • Bật nhận đơn tại tab Thu nhập',
+                        style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Quét lại đơn quanh đây',
-                      onPressed: _fetchAvailableOrders,
-                      icon: const Icon(Icons.refresh, color: Colors.deepOrange),
-                    ),
-                    _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Switch(
-                            value: _isOnline,
-                            activeTrackColor: Colors.green.shade300,
-                            activeThumbColor: Colors.green,
-                            onChanged: (val) => _toggleOnline(val),
-                          ),
                   ],
                 ),
               ),
             ),
           ),
-        ),
 
-        // 3. KHAY ĐƠN HÀNG ĐANG CHỜ GIAO QUANH BẠN
-        if (_isOnline && _availableOrders.isNotEmpty)
+        // 3. KHAY ĐƠN HÀNG ĐANG CHỜ GIAO QUANH BẠN (CHỈ HIỆN KHI RẢNH RỖI)
+        if (widget.isOnline && !widget.hasActiveTrip && _availableOrders.isNotEmpty)
           Positioned(
             left: 12,
             right: 12,
@@ -484,7 +767,7 @@ class _ShipperHomeScreenState extends State<ShipperHomeScreen> {
 
         // 4. NÚT VỊ TRÍ CỦA TÔI
         Positioned(
-          bottom: (_isOnline && _availableOrders.isNotEmpty) ? 256 : 24,
+          bottom: (widget.isOnline && !widget.hasActiveTrip && _availableOrders.isNotEmpty) ? 256 : 24,
           right: 16,
           child: FloatingActionButton.small(
             heroTag: 'recenter_gps',

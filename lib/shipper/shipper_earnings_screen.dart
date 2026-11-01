@@ -6,7 +6,16 @@ import '../services/profile_api_service.dart';
 import '../services/shipper_earnings_service.dart';
 
 class ShipperEarningsScreen extends StatefulWidget {
-  const ShipperEarningsScreen({super.key});
+  final bool isOnline;
+  final bool isLoadingOnline;
+  final Future<void> Function(bool value)? onToggleOnline;
+
+  const ShipperEarningsScreen({
+    super.key,
+    this.isOnline = true,
+    this.isLoadingOnline = false,
+    this.onToggleOnline,
+  });
 
   @override
   State<ShipperEarningsScreen> createState() => _ShipperEarningsScreenState();
@@ -263,6 +272,67 @@ class _ShipperEarningsScreenState extends State<ShipperEarningsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Thẻ Bật / Tắt chế độ sẵn sàng nhận cuốc
+            Card(
+              elevation: 2,
+              margin: const EdgeInsets.only(bottom: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: widget.isOnline ? Colors.green.shade50 : Colors.grey.shade100,
+                      child: Icon(
+                        widget.isOnline ? Icons.radar : Icons.power_settings_new,
+                        color: widget.isOnline ? Colors.green : Colors.grey,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.isOnline ? 'Đang sẵn sàng nhận cuốc' : 'Đang tạm dừng nhận cuốc',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: widget.isOnline ? Colors.green.shade800 : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.isOnline
+                                ? 'GPS đang phát tín hiệu • Sẵn sàng nổ đơn'
+                                : 'Gạt công tắc để bắt đầu ca nhận đơn',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    widget.isLoadingOnline
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Switch(
+                            value: widget.isOnline,
+                            activeTrackColor: Colors.green.shade300,
+                            activeThumbColor: Colors.green,
+                            onChanged: widget.onToggleOnline != null
+                                ? (val) => widget.onToggleOnline!(val)
+                                : null,
+                          ),
+                  ],
+                ),
+              ),
+            ),
+
             // Thẻ Thông tin Tài xế & Ví
             Card(
               elevation: 3,

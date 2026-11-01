@@ -66,14 +66,16 @@ public sealed class OrderHub(
         if (!string.IsNullOrWhiteSpace(driverId))
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, $"driver_{driverId.Trim()}");
-            if (Guid.TryParse(driverId, out var id))
+            var id = await orderService.ResolveDriverIdAsync(driverId, Context.ConnectionAborted);
+            if (id != Guid.Empty)
             {
                 var existing = driverLocationService.GetDriver(id);
                 if (existing is null)
                 {
                     driverLocationService.UpdateLocation(id, 16.0442, 108.2213, "Tài xế SOOPI", "");
                 }
-                driverLocationService.SetAvailability(id, true);
+                var hasActive = await orderService.HasActiveOrderForDriverAsync(id, Context.ConnectionAborted);
+                driverLocationService.SetAvailability(id, !hasActive);
             }
         }
     }
@@ -83,48 +85,66 @@ public sealed class OrderHub(
         if (!string.IsNullOrWhiteSpace(driverId))
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"driver_{driverId.Trim()}");
-            if (Guid.TryParse(driverId, out var id))
+            var id = await orderService.ResolveDriverIdAsync(driverId, Context.ConnectionAborted);
+            if (id != Guid.Empty)
             {
                 driverLocationService.SetAvailability(id, false);
             }
         }
     }
 
-    public Task DriverPingLocation(string driverId, double latitude, double longitude, string name = "", string phone = "")
+    public async Task DriverPingLocation(string driverId, double latitude, double longitude, string name = "", string phone = "")
     {
-        if (Guid.TryParse(driverId, out var id))
+        var id = await orderService.ResolveDriverIdAsync(driverId, Context.ConnectionAborted);
+        if (id != Guid.Empty)
         {
             driverLocationService.UpdateLocation(id, latitude, longitude, name, phone);
-            driverLocationService.SetAvailability(id, true);
+            var hasActive = await orderService.HasActiveOrderForDriverAsync(id, Context.ConnectionAborted);
+            driverLocationService.SetAvailability(id, !hasActive);
         }
-        return Task.CompletedTask;
     }
 
     public async Task<bool> DriverAcceptOffer(string orderId, string driverId)
     {
-        if (Guid.TryParse(orderId, out var oId) && Guid.TryParse(driverId, out var dId))
+        if (!Guid.TryParse(orderId, out var oId))
         {
-            var acceptedViaQueue = driverOfferManager.TryAcceptOffer(oId, dId);
-            if (acceptedViaQueue)
-            {
-                return true;
-            }
-
-            // Fallback: Nếu tài xế bấm nhận sau khi hết 15s hoặc nhận từ danh sách đơn đang chờ
-            var assignedDirectly = await orderService.AssignShipperAsync(oId, dId, Context.ConnectionAborted);
-            return assignedDirectly;
+            return false;
         }
-        return false;
+
+        var dId = await orderService.ResolveDriverIdAsync(driverId, Context.ConnectionAborted);
+        if (dId == Guid.Empty)
+        {
+            return false;
+        }
+
+        var acceptedViaQueue = driverOfferManager.TryAcceptOffer(oId, dId);
+        if (acceptedViaQueue)
+        {
+            driverLocationService.SetAvailability(dId, false);
+            return true;
+        }
+
+        // Fallback: Nếu tài xế bấm nhận sau khi hết 15s hoặc nhận từ danh sách đơn đang chờ
+        var assignedDirectly = await orderService.AssignShipperAsync(oId, dId, Context.ConnectionAborted);
+        if (assignedDirectly)
+        {
+            driverLocationService.SetAvailability(dId, false);
+        }
+        return assignedDirectly;
     }
 
-    public Task<bool> DriverRejectOffer(string orderId, string driverId)
+    public async Task<bool> DriverRejectOffer(string orderId, string driverId)
     {
-        if (Guid.TryParse(orderId, out var oId) && Guid.TryParse(driverId, out var dId))
+        if (Guid.TryParse(orderId, out var oId))
         {
-            var rejected = driverOfferManager.TryRejectOffer(oId, dId);
-            return Task.FromResult(rejected);
+            var dId = await orderService.ResolveDriverIdAsync(driverId, Context.ConnectionAborted);
+            if (dId != Guid.Empty)
+            {
+                var rejected = driverOfferManager.TryRejectOffer(oId, dId);
+                return rejected;
+            }
         }
-        return Task.FromResult(false);
+        return false;
     }
 
     public async Task<List<DriverOfferPayload>> GetAvailableOrdersForDriver(double latitude, double longitude)
@@ -137,7 +157,12 @@ public sealed class OrderHub(
         if (Guid.TryParse(orderId, out var oId))
         {
             Guid.TryParse(driverId, out var dId);
-            return await orderService.DriverUpdateOrderStatusAsync(oId, dId, status, Context.ConnectionAborted);
+            var ok = await orderService.DriverUpdateOrderStatusAsync(oId, dId, status, Context.ConnectionAborted);
+            if (ok && status == "Delivered" && dId != Guid.Empty)
+            {
+                driverLocationService.SetAvailability(dId, true);
+            }
+            return ok;
         }
         return false;
     }

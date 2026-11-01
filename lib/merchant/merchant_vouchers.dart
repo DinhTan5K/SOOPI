@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'merchant_style.dart';
+
 import 'package:flutter/services.dart';
 
 import '../services/merchant_api_service.dart';
@@ -65,7 +68,7 @@ class _MerchantVouchersState extends State<MerchantVouchers> {
           .showSnackBar(SnackBar(content: Text('$message')));
 
   Future<void> _create() async {
-    final input = await showDialog<Map<String, dynamic>>(
+    final input = await showMerchantDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => _VoucherForm(items: widget.items),
     );
@@ -117,7 +120,7 @@ class _MerchantVouchersState extends State<MerchantVouchers> {
         await widget.api.request('GET', '$_path/${row['id']}') as Map,
       );
       if (!mounted) return;
-      await showDialog<void>(
+      await showMerchantDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
           title: Text(result['code'] as String),
@@ -163,25 +166,44 @@ class _MerchantVouchersState extends State<MerchantVouchers> {
     children: [
       Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Expanded(
-              child: Text(
-                'Voucher của quán',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
+            const MerchantSectionHeader(
+              title: 'Ưu đãi của quán',
+              subtitle: 'Tạo ưu đãi hấp dẫn để khách quay lại nhiều hơn.',
+              icon: Icons.local_offer_rounded,
             ),
-            IconButton(
-              onPressed: _loading || _saving ? null : _load,
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Tải lại',
-            ),
-            FilledButton.icon(
-              onPressed: _loading || _saving || widget.restaurantId == null
-                  ? null
-                  : _create,
-              icon: const Icon(Icons.add),
-              label: const Text('Tạo voucher'),
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                const Text(
+                  'Voucher của quán',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    IconButton(
+                      onPressed: _loading || _saving ? null : _load,
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Tải lại',
+                    ),
+                    FilledButton.icon(
+                      onPressed:
+                          _loading || _saving || widget.restaurantId == null
+                          ? null
+                          : _create,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Tạo voucher'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ],
         ),
@@ -192,17 +214,24 @@ class _MerchantVouchersState extends State<MerchantVouchers> {
             ? const Center(child: CircularProgressIndicator())
             : _error != null
             ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_error!, textAlign: TextAlign.center),
-                    TextButton(onPressed: _load, child: const Text('Thử lại')),
-                  ],
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_error!, textAlign: TextAlign.center),
+                      TextButton(
+                        onPressed: _load,
+                        child: const Text('Thử lại'),
+                      ),
+                    ],
+                  ),
                 ),
               )
             : _rows.isEmpty
-            ? const Center(
-                child: Text('Chưa có voucher. Tạo voucher đầu tiên cho quán.'),
+            ? const MerchantEmptyState(
+                icon: Icons.local_offer_outlined,
+                message: 'Chưa có voucher. Tạo voucher đầu tiên cho quán.',
               )
             : RefreshIndicator(
                 onRefresh: _load,
@@ -214,7 +243,13 @@ class _MerchantVouchersState extends State<MerchantVouchers> {
                     return Card(
                       child: ListTile(
                         onTap: _saving ? null : () => _detail(row),
-                        leading: const Icon(Icons.local_offer_outlined),
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFFFFF0E0),
+                          child: Icon(
+                            Icons.local_offer_outlined,
+                            color: MerchantStyle.primary,
+                          ),
+                        ),
                         title: Text(row['code'] as String),
                         subtitle: Text(
                           '${_scope(row)}\n${_status(row)} • Đã dùng ${row['usedCount']}/${row['usageLimit'] ?? '∞'}',
@@ -305,10 +340,7 @@ class _VoucherFormState extends State<_VoucherForm> {
     padding: const EdgeInsets.only(bottom: 12),
     child: TextFormField(
       controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: InputDecoration(labelText: label),
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [
         FilteringTextInputFormatter.allow(

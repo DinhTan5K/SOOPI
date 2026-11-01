@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../auth_screen.dart';
 import '../services/auth_service.dart';
+import '../services/driver_location_tracker.dart';
 import '../services/profile_api_service.dart';
 import '../services/shipper_earnings_service.dart';
 import 'shipper_home_screen.dart';
@@ -17,6 +19,92 @@ class ShipperMainScreen extends StatefulWidget {
 class _ShipperMainScreenState extends State<ShipperMainScreen> {
   int _currentTab = 0;
   Map<String, dynamic>? _activeTrip;
+  bool _isOnline = false;
+  bool _isOnlineLoading = false;
+  String _driverId = '';
+  String _driverName = 'Tài xế SOOPI';
+  String _driverPhone = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initOnlineState();
+  }
+
+  Future<void> _initOnlineState() async {
+    final cached = ProfileApiService().cachedProfile;
+    if (cached != null && cached.id.isNotEmpty) {
+      _driverId = cached.id;
+      _driverName = cached.fullName.isNotEmpty ? cached.fullName : 'Tài xế SOOPI';
+      _driverPhone = cached.phoneNumber;
+    }
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (_driverId.isEmpty && authUser != null) {
+      _driverId = authUser.uid;
+      _driverName = authUser.displayName ?? authUser.email ?? 'Tài xế SOOPI';
+      _driverPhone = authUser.phoneNumber ?? '';
+    }
+
+    try {
+      final profile = await ProfileApiService().getProfile();
+      if (profile.id.isNotEmpty) {
+        _driverId = profile.id;
+        _driverName = profile.fullName.isNotEmpty ? profile.fullName : 'Tài xế SOOPI';
+        _driverPhone = profile.phoneNumber;
+      }
+    } catch (_) {}
+
+    // Tự động bật online khi tài xế mở app
+    await _toggleOnline(true, silent: true);
+  }
+
+  Future<void> _toggleOnline(bool value, {bool silent = false}) async {
+    if (_driverId.isEmpty) {
+      final authUser = FirebaseAuth.instance.currentUser;
+      if (authUser != null) _driverId = authUser.uid;
+    }
+    if (_driverId.isEmpty) return;
+
+    setState(() => _isOnlineLoading = true);
+
+    if (value) {
+      final ok = await DriverLocationTracker().startTracking(
+        driverId: _driverId,
+        driverName: _driverName,
+        driverPhone: _driverPhone,
+      );
+      if (ok && mounted) {
+        setState(() => _isOnline = true);
+        if (!silent && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+              content: Text('Đã bật nhận đơn! Tọa độ GPS đang cập nhật.'),
+            ),
+          );
+        }
+      }
+    } else {
+      await DriverLocationTracker().stopTracking(_driverId);
+      if (mounted) {
+        setState(() => _isOnline = false);
+        if (!silent && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.grey,
+              duration: Duration(seconds: 2),
+              content: Text('Đã tắt nhận đơn (Nghỉ ngơi).'),
+            ),
+          );
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isOnlineLoading = false);
+    }
+  }
 
   void _onTripAccepted(Map<String, dynamic> offer) {
     setState(() {
@@ -31,6 +119,12 @@ class _ShipperMainScreenState extends State<ShipperMainScreen> {
       _currentTab = 0; // Quay lại bản đồ nhận đơn
     });
     ShipperEarningsService().init();
+  }
+
+  void _navigateToActiveTrip() {
+    setState(() {
+      _currentTab = 1;
+    });
   }
 
   @override
@@ -70,12 +164,24 @@ class _ShipperMainScreenState extends State<ShipperMainScreen> {
       body: IndexedStack(
         index: _currentTab,
         children: [
-          ShipperHomeScreen(onTripAccepted: _onTripAccepted),
+          ShipperHomeScreen(
+            onTripAccepted: _onTripAccepted,
+            hasActiveTrip: _activeTrip != null,
+            activeTrip: _activeTrip,
+            activeTripCode: _activeTrip?['orderCode']?.toString() ?? _activeTrip?['orderId']?.toString() ?? '',
+            onNavigateToActiveTrip: _navigateToActiveTrip,
+            isOnline: _isOnline,
+            onToggleOnline: _toggleOnline,
+          ),
           ShipperActiveTripScreen(
             initialTrip: _activeTrip,
             onTripFinished: _onTripFinished,
           ),
-          const ShipperEarningsScreen(),
+          ShipperEarningsScreen(
+            isOnline: _isOnline,
+            isLoadingOnline: _isOnlineLoading,
+            onToggleOnline: _toggleOnline,
+          ),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(

@@ -615,15 +615,6 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
     setState(() {
       _cartItems[item.id] = (_cartItems[item.id] ?? 0) + 1;
     });
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã thêm "${item.name}" vào giỏ hàng!'),
-        duration: const Duration(seconds: 1),
-        backgroundColor: Colors.orange.shade800,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   void _removeFromCart(ApiMenuItem item) {
@@ -2167,10 +2158,13 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
         _cartNotes.clear();
       });
 
-      Navigator.push(
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => OrderTrackingScreen(orderId: createdOrder.id),
+          builder: (_) => OrderTrackingScreen(
+            orderId: createdOrder.id,
+            fromCheckout: true,
+          ),
         ),
       );
 

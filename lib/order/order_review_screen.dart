@@ -40,8 +40,6 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
     'Đúng hẹn',
   ];
 
-  final List<int> _tipOptions = [0, 10000, 20000, 50000];
-
   @override
   void dispose() {
     _restaurantCommentController.dispose();
@@ -385,32 +383,6 @@ class _OrderReviewScreenState extends State<OrderReviewScreen> {
                     }
                   });
                 },
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
-          const Text('Gửi thêm tiền Tip động viên tài xế:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Row(
-            children: _tipOptions.map((tip) {
-              final isSelected = _tipAmount == tip;
-              final label = tip == 0 ? 'Không tip' : '+${tip ~/ 1000}k';
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(
-                    label: Text(label),
-                    selected: isSelected,
-                    selectedColor: Colors.orange,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : Colors.black87,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                    backgroundColor: Colors.grey.shade100,
-                    onSelected: (selected) => setState(() => _tipAmount = tip),
-                  ),
-                ),
               );
             }).toList(),
           ),

@@ -7,6 +7,7 @@ class OtpVerificationDialog extends StatefulWidget {
   final String email;
   final int initialCooldown;
   final String? initialDevOtp;
+  final bool showDevOtp;
   final Future<bool> Function(String otp) onVerify;
   final Future<OtpSendResult> Function() onResend;
 
@@ -15,6 +16,7 @@ class OtpVerificationDialog extends StatefulWidget {
     required this.email,
     this.initialCooldown = 60,
     this.initialDevOtp,
+    this.showDevOtp = true,
     required this.onVerify,
     required this.onResend,
   });
@@ -24,6 +26,7 @@ class OtpVerificationDialog extends StatefulWidget {
     required String email,
     int initialCooldown = 60,
     String? initialDevOtp,
+    bool showDevOtp = true,
     required Future<bool> Function(String otp) onVerify,
     required Future<OtpSendResult> Function() onResend,
   }) {
@@ -35,6 +38,7 @@ class OtpVerificationDialog extends StatefulWidget {
         email: email,
         initialCooldown: initialCooldown,
         initialDevOtp: initialDevOtp,
+        showDevOtp: showDevOtp,
         onVerify: onVerify,
         onResend: onResend,
       ),
@@ -251,7 +255,7 @@ class _OtpVerificationDialogState extends State<OtpVerificationDialog> {
             ),
 
             // Dev Mode Badge (nếu có devOtp)
-            if (_currentDevOtp != null) ...[
+            if (widget.showDevOtp && _currentDevOtp != null) ...[
               const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

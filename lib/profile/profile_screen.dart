@@ -8,6 +8,8 @@ import 'edit_profile_screen.dart';
 import 'address_list_screen.dart';
 import 'change_password_screen.dart';
 import '../order/order_list_screen.dart';
+import '../shipper/shipper_main_screen.dart';
+import '../admin/admin_main_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onBackToHome;
@@ -401,6 +403,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
               const SizedBox(height: 14),
 
+              // CHẾ ĐỘ ĐỐI TÁC TÀI XẾ
+              _buildSectionTitle('Đối tác giao nhận'),
+              _buildMenuCard([
+                _buildMenuItem(
+                  icon: Icons.delivery_dining,
+                  iconColor: Colors.deepOrange,
+                  title: 'Chế độ Tài xế SOOPI',
+                  subtitle: 'Bật nhận đơn, cập nhật GPS ngầm 5s/lần',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ShipperMainScreen()),
+                    );
+                  },
+                ),
+              ]),
+
+              if (profile.role.toLowerCase() == 'admin') ...[
+                const SizedBox(height: 14),
+                _buildSectionTitle('Quản trị sàn SOOPI FOOD'),
+                _buildMenuCard([
+                  _buildMenuItem(
+                    icon: Icons.admin_panel_settings,
+                    iconColor: Colors.purple,
+                    title: 'Cổng Quản trị viên (Admin Portal)',
+                    subtitle: 'Duyệt quán, quản lý người dùng, đơn hàng',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const AdminMainScreen()),
+                      );
+                    },
+                  ),
+                ]),
+              ],
+
+              const SizedBox(height: 14),
+
               // 4. TIỆN ÍCH & TRỢ GIÚP
               _buildSectionTitle('Hỗ trợ & Ứng dụng'),
               _buildMenuCard([
@@ -518,7 +558,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
-      child: Column(children: children),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: Column(children: children),
+      ),
     );
   }
 
