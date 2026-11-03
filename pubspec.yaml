@@ -49,6 +49,8 @@ dependencies:
   signalr_netcore: ^1.4.4
   google_sign_in: ^7.2.0
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
 
