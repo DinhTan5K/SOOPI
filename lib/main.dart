@@ -66,13 +66,10 @@ class AuthGate extends StatelessWidget {
             ),
           );
         }
-
-        // Nếu đã có phiên đăng nhập Firebase (kể cả khi F5 Refresh trình duyệt)
         if (snapshot.hasData && snapshot.data != null) {
           return RoleBasedHome(key: ValueKey(snapshot.data!.uid));
         }
 
-        // Chỉ khi chưa đăng nhập hoặc đã bấm Đăng xuất mới hiện trang Login
         return const AuthScreen();
       },
     );

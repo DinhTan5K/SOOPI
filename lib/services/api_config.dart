@@ -13,21 +13,24 @@ class ApiConfig extends ChangeNotifier {
   static const String _prefKey = 'custom_server_base_url';
 
   // IP máy tính hiện tại và các candidate phổ biến
-  static const String currentPcWifiIp = '192.168.2.46';
+  static const String currentPcWifiIp = '10.12.104.133';
 
   static const List<String> defaultCandidates = [
-    'http://127.0.0.1:5000/api',          // USB cắm cáp (adb reverse) & Windows Desktop
+    'http://10.12.104.133:5000/api',       // Wi-Fi máy tính hiện tại
+    'http://127.0.0.1:5000/api',           // USB cắm cáp (adb reverse) & Windows Desktop
     'http://localhost:5000/api',           // Localhost
-    'http://192.168.2.46:5000/api',       // Wi-Fi máy tính hiện tại (192.168.1.69)
-    'http://10.12.104.120:5000/api',      // Wi-Fi phụ
-    'http://192.168.1.190:5000/api',      // Wi-Fi máy tính phụ
-    'https://soopifood-dev.loca.lt/api',  // Cloud Tunnel (Hoạt động trên 4G & mọi Wi-Fi)
+    'http://10.12.104.120:5000/api',       // Wi-Fi phụ
+    'http://192.168.1.190:5000/api',       // Wi-Fi máy tính phụ
+    'https://soopifood-dev.loca.lt/api',   // Cloud Tunnel (Hoạt động trên 4G & mọi Wi-Fi)
     'http://10.0.2.2:5000/api',            // Android Emulator
     'http://192.168.43.1:5000/api',        // Khi điện thoại phát Wi-Fi Hotspot cho máy tính
-    'http://172.20.10.1:5000/api',         // iPhone Hotspot
+    'http://172.20.10.1:5000/api',         // iPhone Hotspot Gateway
+    'http://172.20.10.2:5000/api',         // iPhone Hotspot Client 1
+    'http://172.20.10.3:5000/api',         // iPhone Hotspot Client 2
+    'http://172.20.10.4:5000/api',         // iPhone Hotspot Client 3
   ];
 
-  String _baseUrl = 'http://127.0.0.1:5000/api';
+  String _baseUrl = 'http://$currentPcWifiIp:5000/api';
   bool _isInitialized = false;
   bool _isAutoDetecting = false;
 
@@ -40,7 +43,7 @@ class ApiConfig extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Khởi tạo khi app vừa mở: khôi phục URL đã lưu hoặc tự động dò
+  /// Khởi tạo khi app vừa mở: kiểm tra URL đã lưu, nếu chết thì xóa ngay và tự động dò IP mới
   Future<void> init() async {
     if (_isInitialized) return;
     _isInitialized = true;
@@ -49,32 +52,37 @@ class ApiConfig extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString(_prefKey);
       if (saved != null && saved.trim().isNotEmpty) {
-        _baseUrl = _normalizeUrl(saved);
-        // Kiểm tra nhanh URL đã lưu
-        final ok = await testConnection(_baseUrl, timeout: const Duration(milliseconds: 1500));
+        final candidate = _normalizeUrl(saved);
+        // Kiểm tra nhanh URL đã lưu TRƯỚC khi gán vào _baseUrl
+        final ok = await testConnection(candidate, timeout: const Duration(milliseconds: 1200));
         if (ok) {
+          _baseUrl = candidate;
           debugPrint('[ApiConfig] Đã kết nối URL đã lưu: $_baseUrl');
           return;
+        } else {
+          // Xóa ngay IP Wi-Fi cũ (VD: 192.168.2.46) khỏi bộ nhớ để không bao giờ bị kẹt lại
+          debugPrint('[ApiConfig] URL cũ ($candidate) không còn phản hồi, đã xóa cache và chuyển sang IP mới.');
+          await prefs.remove(_prefKey);
+          _baseUrl = 'http://$currentPcWifiIp:5000/api';
         }
       }
     } catch (e) {
       debugPrint('[ApiConfig] Lỗi đọc SharedPreferences: $e');
     }
 
-    // Nếu URL hiện tại không chạy được, tự động dò tìm song song
+    // Tự động dò tìm song song
     await autoDetect();
   }
 
   /// Chuẩn hóa định dạng URL (thêm http://, port :5000, /api nếu người dùng nhập thiếu)
   static String _normalizeUrl(String input) {
     var url = input.trim();
-    if (url.isEmpty) return 'http://127.0.0.1:5000/api';
+    if (url.isEmpty) return 'http://$currentPcWifiIp:5000/api';
 
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = 'http://$url';
     }
 
-    // Nếu người dùng chỉ nhập IP (vd: 192.168.1.13)
     final uri = Uri.tryParse(url);
     if (uri != null && uri.host.isNotEmpty) {
       final port = uri.hasPort ? uri.port : 5000;
@@ -109,7 +117,7 @@ class ApiConfig extends ChangeNotifier {
     }
   }
 
-  /// Quét siêu tốc (50-200ms) toàn bộ dải subnet Wi-Fi của điện thoại để tìm máy tính chạy Backend port 5000
+  /// Quét dải subnet Wi-Fi của điện thoại để tìm máy tính chạy Backend port 5000
   Future<String?> _scanSubnetsForBackend(int port) async {
     if (kIsWeb) return null;
     try {
@@ -170,45 +178,37 @@ class ApiConfig extends ChangeNotifier {
     return null;
   }
 
-  /// Tự động dò tìm song song tất cả IP khả dĩ (USB adb reverse -> Quét subnet Wi-Fi -> Danh sách mặc định)
+  /// Tự động dò tìm tất cả IP khả dĩ (Ưu tiên IP Wi-Fi hiện tại 10.12.104.133 & USB 127.0.0.1 trước)
   Future<bool> autoDetect() async {
     _isAutoDetecting = true;
     notifyListeners();
 
     try {
-      // 1. Kiểm tra nhanh URL hiện tại hoặc USB adb reverse (timeout 2s)
-      if (await testConnection(_baseUrl, timeout: const Duration(seconds: 2))) {
-        debugPrint('[ApiConfig] URL hiện tại vẫn hoạt động tốt: $_baseUrl');
-        return true;
-      }
-      if (await testConnection('http://127.0.0.1:5000/api', timeout: const Duration(seconds: 2))) {
-        _baseUrl = 'http://127.0.0.1:5000/api';
-        await _saveBaseUrl(_baseUrl);
-        debugPrint('[ApiConfig] Đã kết nối qua cáp USB (adb reverse): $_baseUrl');
-        return true;
+      // 1. Ưu tiên kiểm tra IP Wi-Fi máy tính (10.12.104.133) và USB (127.0.0.1) trước tiên
+      final priorityUrls = <String>[
+        'http://$currentPcWifiIp:5000/api',
+        'http://127.0.0.1:5000/api',
+      ];
+
+      for (final url in priorityUrls) {
+        if (await testConnection(url, timeout: const Duration(seconds: 2))) {
+          _baseUrl = _normalizeUrl(url);
+          await _saveBaseUrl(_baseUrl);
+          debugPrint('[ApiConfig] Đã kết nối máy chủ thành công: $_baseUrl');
+          return true;
+        }
       }
 
-      // 2. Tự động quét dải mạng Wi-Fi hiện tại của điện thoại để tìm máy tính (siêu nhanh ~100ms)
-      final subnetFound = await _scanSubnetsForBackend(5000);
-      if (subnetFound != null) {
-        _baseUrl = _normalizeUrl(subnetFound);
-        await _saveBaseUrl(_baseUrl);
-        debugPrint('[ApiConfig] Đã tự động dò thấy máy tính trong mạng Wi-Fi: $_baseUrl');
-        return true;
-      }
-
-      // 3. Fallback: Dò các IP dự phòng phổ biến
+      // 2. Dò các IP dự phòng phổ biến song song
       final candidates = <String>{
         ...defaultCandidates,
       }.toList();
-
-      debugPrint('[ApiConfig] Đang dò tìm máy chủ BE qua ${candidates.length} địa chỉ dự phòng...');
 
       final completer = Completer<String?>();
       var pending = candidates.length;
 
       for (final candidate in candidates) {
-        testConnection(candidate, timeout: const Duration(milliseconds: 1500)).then((ok) {
+        testConnection(candidate, timeout: const Duration(milliseconds: 1800)).then((ok) {
           if (ok && !completer.isCompleted) {
             completer.complete(candidate);
           } else {
@@ -231,6 +231,18 @@ class ApiConfig extends ChangeNotifier {
         debugPrint('[ApiConfig] Đã kết nối máy chủ BE: $_baseUrl');
         return true;
       }
+
+      // 3. Quét dải mạng Wi-Fi hiện tại của điện thoại để tìm máy tính
+      final subnetFound = await _scanSubnetsForBackend(5000);
+      if (subnetFound != null) {
+        _baseUrl = _normalizeUrl(subnetFound);
+        await _saveBaseUrl(_baseUrl);
+        debugPrint('[ApiConfig] Đã tự động dò thấy máy tính trong mạng Wi-Fi: $_baseUrl');
+        return true;
+      }
+
+      // Nếu chưa kết nối được, luôn đặt mặc định về IP Wi-Fi hiện tại của máy tính (không giữ IP cũ)
+      _baseUrl = 'http://$currentPcWifiIp:5000/api';
     } catch (e) {
       debugPrint('[ApiConfig] Dò tìm tự động thất bại: $e');
     } finally {
@@ -317,14 +329,14 @@ class _ServerConfigSheetState extends State<_ServerConfigSheet> {
       setState(() {
         _isTesting = false;
         _isSuccess = true;
-        _statusMessage = '✅ Đã tìm thấy máy chủ BE:\n${_config.baseUrl}';
+        _statusMessage = 'Đã tìm thấy máy chủ BE:\n${_config.baseUrl}';
       });
       widget.onConnected?.call();
     } else {
       setState(() {
         _isTesting = false;
         _isSuccess = false;
-        _statusMessage = '❌ Không tìm thấy máy chủ tự động. Vui lòng nhập IP thủ công.';
+        _statusMessage = 'Không tìm thấy máy chủ tự động. Vui lòng nhập IP thủ công.';
       });
     }
   }
@@ -400,7 +412,7 @@ class _ServerConfigSheetState extends State<_ServerConfigSheet> {
             controller: _controller,
             decoration: InputDecoration(
               labelText: 'Địa chỉ Backend API (URL hoặc IP)',
-              hintText: 'VD: 192.168.1.13 hoặc http://192.168.1.13:5000/api',
+              hintText: 'VD: 10.12.104.133 hoặc http://10.12.104.133:5000/api',
               prefixIcon: const Icon(Icons.link),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.clear),
@@ -465,9 +477,9 @@ class _ServerConfigSheetState extends State<_ServerConfigSheet> {
             runSpacing: 4,
             children: [
               const Text('Gợi ý:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              _buildChip('10.12.104.133 (Wi-Fi)'),
               _buildChip('127.0.0.1 (USB)'),
               _buildChip('Cloud Tunnel (4G/Wi-Fi)'),
-              _buildChip('192.168.1.190 (Wi-Fi)'),
               _buildChip('10.0.2.2 (Emulator)'),
             ],
           ),
@@ -482,8 +494,8 @@ class _ServerConfigSheetState extends State<_ServerConfigSheet> {
       url = 'http://127.0.0.1:5000/api';
     } else if (label.contains('Cloud Tunnel')) {
       url = 'https://soopifood-dev.loca.lt/api';
-    } else if (label.contains('192.168.1.190')) {
-      url = 'http://192.168.1.190:5000/api';
+    } else if (label.contains('10.12.104.133')) {
+      url = 'http://10.12.104.133:5000/api';
     } else {
       url = 'http://10.0.2.2:5000/api';
     }

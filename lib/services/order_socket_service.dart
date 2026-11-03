@@ -77,7 +77,7 @@ class OrderSocketService {
           final data = arguments.first;
           if (data is Map) {
             final map = Map<String, dynamic>.from(data);
-            debugPrint('[OrderSocketService] 🔔 Nhận đơn hàng mới: ${map['orderCode'] ?? map['orderId']}');
+            debugPrint('[OrderSocketService] Nhận đơn hàng mới: ${map['orderCode'] ?? map['orderId']}');
             try {
               SystemSound.play(SystemSoundType.alert);
               HapticFeedback.heavyImpact();
@@ -93,7 +93,7 @@ class OrderSocketService {
           final data = arguments.first;
           if (data is Map) {
             final map = Map<String, dynamic>.from(data);
-            debugPrint('[OrderSocketService] ⚡ Trạng thái đơn cập nhật: ${map['newStatus']}');
+            debugPrint('[OrderSocketService] Trạng thái đơn cập nhật: ${map['newStatus']}');
             try {
               HapticFeedback.lightImpact();
             } catch (_) {}
@@ -108,7 +108,7 @@ class OrderSocketService {
           final data = arguments.first;
           if (data is Map) {
             final map = Map<String, dynamic>.from(data);
-            debugPrint('[OrderSocketService] 🛵 Nổ đơn mới: ${map['orderCode']} (Khoảng cách: ${map['distanceToRestaurantKm']}km)');
+            debugPrint('[OrderSocketService] Nổ đơn mới: ${map['orderCode']} (Khoảng cách: ${map['distanceToRestaurantKm']}km)');
             try {
               SystemSound.play(SystemSoundType.alert);
               HapticFeedback.heavyImpact();
@@ -130,10 +130,12 @@ class OrderSocketService {
       });
 
       await _hubConnection!.start();
-      debugPrint('[OrderSocketService] ✅ Kết nối SignalR thành công!');
+      debugPrint('[OrderSocketService] Kết nối SignalR thành công!');
       _rejoinRooms();
     } catch (e) {
-      debugPrint('[OrderSocketService] ❌ Lỗi kết nối SignalR: $e');
+      debugPrint('[OrderSocketService] Lỗi kết nối SignalR: $e');
+      // Tự động dò lại IP nếu URL hiện tại bị timeout do đổi Wi-Fi
+      await ApiConfig().autoDetect();
     } finally {
       _isConnecting = false;
     }

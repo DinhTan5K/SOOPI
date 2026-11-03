@@ -36,9 +36,6 @@ class CloudinaryService {
     }
   }
 
-  /// Tải ảnh lên Cloudinary
-  /// Ưu tiên 1: Thông qua Backend C# API (POST /api/upload/image)
-  /// Dự phòng 2: Tải trực tiếp lên Cloudinary REST API với chữ ký bảo mật (Signed Upload)
   Future<String?> uploadImage(dynamic imageFile) async {
     if (imageFile == null) return null;
 
