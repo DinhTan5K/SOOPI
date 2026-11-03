@@ -1067,7 +1067,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onBackToHome: () => setState(() => _selectedIndex = 0),
             ),
           ),
-          _buildSimplePlaceholder('Món ăn yêu thích', Icons.favorite),
+          _buildFavoritesTab(),
           ProfileScreen(
             isVisible: _selectedIndex == 3,
             onBackToHome: () => setState(() => _selectedIndex = 0),
@@ -2582,6 +2582,27 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildFavoritesTab() {
+    return _FavoritesTab(
+      isVisible: _selectedIndex == 2,
+      allRestaurants: _restaurants,
+      onExplore: () => setState(() => _selectedIndex = 0),
+      onSelectRestaurant: (restaurant) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => RestaurantDetailScreen(
+              restaurant: restaurant,
+              userLat: _selectedLat,
+              userLng: _selectedLng,
+              userAddress: _selectedAddressName,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSimplePlaceholder(String title, IconData icon) {
     return Scaffold(
       appBar: AppBar(
@@ -2981,6 +3002,282 @@ class _AddressInputDialogState extends State<_AddressInputDialog> {
           child: const Text('Dùng địa chỉ này'),
         ),
       ],
+    );
+  }
+}
+
+class _FavoritesTab extends StatefulWidget {
+  final bool isVisible;
+  final List<ApiRestaurant> allRestaurants;
+  final VoidCallback onExplore;
+  final ValueChanged<ApiRestaurant> onSelectRestaurant;
+
+  const _FavoritesTab({
+    required this.isVisible,
+    required this.allRestaurants,
+    required this.onExplore,
+    required this.onSelectRestaurant,
+  });
+
+  @override
+  State<_FavoritesTab> createState() => _FavoritesTabState();
+}
+
+class _FavoritesTabState extends State<_FavoritesTab> {
+  List<ApiRestaurant> _favorites = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorites();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FavoritesTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isVisible && !oldWidget.isVisible) {
+      _loadFavorites();
+    }
+  }
+
+  Future<void> _loadFavorites() async {
+    setState(() => _loading = true);
+    try {
+      final apiFavs = await ApiService.fetchFavorites();
+      final prefs = await SharedPreferences.getInstance();
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      final favIds = prefs.getStringList('soopi.favorites.$uid') ?? [];
+
+      final Map<String, ApiRestaurant> map = {};
+      for (final r in apiFavs) {
+        map[r.id] = r;
+      }
+      for (final r in widget.allRestaurants) {
+        if (favIds.contains(r.id)) {
+          map[r.id] = r;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _favorites = map.values.toList();
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _toggleFavorite(ApiRestaurant restaurant) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      final favs = prefs.getStringList('soopi.favorites.$uid') ?? [];
+      favs.remove(restaurant.id);
+      await prefs.setStringList('soopi.favorites.$uid', favs);
+      ApiService.toggleFavorite(restaurant.id, false);
+
+      setState(() {
+        _favorites.removeWhere((r) => r.id == restaurant.id);
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã xóa "${restaurant.name}" khỏi danh sách Yêu thích'),
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        title: const Text('Món ăn & Quán yêu thích', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        automaticallyImplyLeading: false,
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Colors.orange))
+          : _favorites.isEmpty
+              ? _buildEmptyState()
+              : RefreshIndicator(
+                  onRefresh: _loadFavorites,
+                  color: Colors.orange,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _favorites.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final item = _favorites[index];
+                      return _buildFavoriteCard(item);
+                    },
+                  ),
+                ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.favorite_border_rounded, size: 64, color: Colors.orange),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Chưa có danh sách yêu thích',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Hãy nhấn biểu tượng Trái tim ❤️ ở các nhà hàng bạn yêu thích để dễ dàng tìm lại và đặt hàng lần sau!',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: widget.onExplore,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.search_rounded, size: 18),
+              label: const Text('Khám phá món ngon ngay', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFavoriteCard(ApiRestaurant restaurant) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: restaurant.imageUrl != null && restaurant.imageUrl!.isNotEmpty
+                ? Image.network(
+                    restaurant.imageUrl!,
+                    width: 85,
+                    height: 85,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      width: 85,
+                      height: 85,
+                      color: Colors.orange.shade50,
+                      child: const Icon(Icons.storefront, color: Colors.orange, size: 36),
+                    ),
+                  )
+                : Container(
+                    width: 85,
+                    height: 85,
+                    color: Colors.orange.shade50,
+                    child: const Icon(Icons.storefront, color: Colors.orange, size: 36),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        restaurant.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.favorite, color: Colors.red, size: 20),
+                      onPressed: () => _toggleFavorite(restaurant),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                    const SizedBox(width: 2),
+                    Text(
+                      restaurant.averageRating > 0 ? restaurant.averageRating.toStringAsFixed(1) : '5.0',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                    Text(
+                      ' (${restaurant.reviewCount}+ đánh giá)',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  restaurant.address,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: () => widget.onSelectRestaurant(restaurant),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Đặt ngay', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -53,6 +53,53 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
     _deliveryLng = widget.userLng;
     _loadSavedAddressFallback();
     _loadRestaurantVouchers();
+    _checkFavoriteStatus();
+  }
+
+  Future<void> _checkFavoriteStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      final favs = prefs.getStringList('soopi.favorites.$uid') ?? [];
+      if (mounted) {
+        setState(() {
+          _isFavorite = favs.contains(widget.restaurant.id);
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFavoriteState() async {
+    final next = !_isFavorite;
+    setState(() {
+      _isFavorite = next;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      final favs = prefs.getStringList('soopi.favorites.$uid') ?? [];
+      if (next) {
+        if (!favs.contains(widget.restaurant.id)) favs.add(widget.restaurant.id);
+      } else {
+        favs.remove(widget.restaurant.id);
+      }
+      await prefs.setStringList('soopi.favorites.$uid', favs);
+      ApiService.toggleFavorite(widget.restaurant.id, next);
+    } catch (_) {}
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next
+              ? '❤️ Đã thêm "${widget.restaurant.name}" vào danh sách Yêu thích'
+              : 'Đã xóa khỏi danh sách Yêu thích'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _loadRestaurantVouchers() async {
@@ -298,20 +345,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen>
               color: _isFavorite ? Colors.red : Colors.black87,
               size: 20,
             ),
-            onPressed: () {
-              setState(() {
-                _isFavorite = !_isFavorite;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(_isFavorite
-                      ? '❤️ Đã thêm "${restaurant.name}" vào yêu thích'
-                      : 'Đã xóa khỏi danh sách yêu thích'),
-                  duration: const Duration(seconds: 1),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
+            onPressed: _toggleFavoriteState,
           ),
         ),
         Container(

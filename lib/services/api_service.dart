@@ -290,6 +290,49 @@ class ApiService {
     return [];
   }
 
+  /// LẤY DANH SÁCH NHÀ HÀNG YÊU THÍCH TỪ BACKEND (GET /api/favorites/{userId})
+  static Future<List<ApiRestaurant>> fetchFavorites() async {
+    try {
+      final profile = await ProfileApiService().getProfile().catchError((_) => ProfileApiService().getInitialProfile());
+      final userId = profile.id;
+      if (userId.isEmpty) return [];
+      final baseUrl = ProfileApiService().baseUrl;
+      final uri = Uri.parse('$baseUrl/favorites/$userId');
+      final response = await http.get(uri, headers: {
+        'bypass-tunnel-reminder': 'true',
+        'Content-Type': 'application/json',
+      }).timeout(const Duration(seconds: 4));
+
+      if (response.statusCode == 200) {
+        final list = jsonDecode(utf8.decode(response.bodyBytes)) as List;
+        return list.map((item) => ApiRestaurant.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (e) {
+      debugPrint('Error fetchFavorites: $e');
+    }
+    return [];
+  }
+
+  /// THÊM / XÓA NHÀ HÀNG YÊU THÍCH (PUT /api/favorites/{userId}/{restaurantId}?saved=true)
+  static Future<bool> toggleFavorite(String restaurantId, bool isFavorite) async {
+    try {
+      final profile = await ProfileApiService().getProfile().catchError((_) => ProfileApiService().getInitialProfile());
+      final userId = profile.id;
+      if (userId.isEmpty) return false;
+      final baseUrl = ProfileApiService().baseUrl;
+      final uri = Uri.parse('$baseUrl/favorites/$userId/$restaurantId?saved=$isFavorite');
+      final response = await http.put(uri, headers: {
+        'bypass-tunnel-reminder': 'true',
+        'Content-Type': 'application/json',
+      }).timeout(const Duration(seconds: 4));
+
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      debugPrint('Error toggleFavorite: $e');
+      return false;
+    }
+  }
+
   /// TỰ ĐỘNG ĐỊNH VỊ THÀNH PHỐ VÀ TỌA ĐỘ THEO MẠNG INTERNET/IP CỦA MÁY TÍNH (HTTPS)
   static Future<Map<String, dynamic>?> getIpLocation() async {
     try {
